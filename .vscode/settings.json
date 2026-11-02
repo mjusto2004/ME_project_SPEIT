@@ -1,0 +1,6 @@
+{
+    "python.defaultInterpreterPath": "/home/infres/justo-24/ME project/.venv/bin/python",
+    "terminal.integrated.env.linux": {
+        "LD_LIBRARY_PATH": "/home/infres/justo-24/.local/glu-env/lib"
+    }
+}

@@ -1,0 +1,94 @@
+Job 1081141 started on nodemm05 at Mon Nov  2 07:23:19 CET 2026
+Dataset: /home/infres/justo-24/ME project/pipeline/datasets/data_test.csv
+Mon Nov  2 07:23:19 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 610.57.04              KMD Version: 610.57.04     CUDA UMD Version: 13.3     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA GeForce RTX 3090        Off |   00000000:41:00.0 Off |                  N/A |
+| 30%   25C    P8             25W /  350W |       1MiB /  24576MiB |      0%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+Device: cuda
+GPU: NVIDIA GeForce RTX 3090
+Dataset: /home/infres/justo-24/ME project/pipeline/datasets/data_test.csv
+Samples: 90
+Train: 62
+Validation: 14
+Test: 14
+Epoch   1 | Train MSE: 1.00438 | Val MSE: 1.09298 | Val MAE: 0.278
+Epoch  10 | Train MSE: 0.63418 | Val MSE: 0.64783 | Val MAE: 0.201
+Epoch  20 | Train MSE: 0.16533 | Val MSE: 0.12854 | Val MAE: 0.103
+Epoch  30 | Train MSE: 0.05220 | Val MSE: 0.06522 | Val MAE: 0.068
+Epoch  40 | Train MSE: 0.02476 | Val MSE: 0.03197 | Val MAE: 0.051
+Epoch  50 | Train MSE: 0.01425 | Val MSE: 0.01620 | Val MAE: 0.038
+Epoch  60 | Train MSE: 0.00867 | Val MSE: 0.01503 | Val MAE: 0.038
+Epoch  70 | Train MSE: 0.00549 | Val MSE: 0.01077 | Val MAE: 0.031
+Epoch  80 | Train MSE: 0.00350 | Val MSE: 0.00865 | Val MAE: 0.028
+Epoch  90 | Train MSE: 0.00233 | Val MSE: 0.00747 | Val MAE: 0.025
+Epoch 100 | Train MSE: 0.00166 | Val MSE: 0.00673 | Val MAE: 0.024
+Epoch 110 | Train MSE: 0.00124 | Val MSE: 0.00622 | Val MAE: 0.023
+Epoch 120 | Train MSE: 0.00097 | Val MSE: 0.00609 | Val MAE: 0.022
+Epoch 130 | Train MSE: 0.00077 | Val MSE: 0.00596 | Val MAE: 0.022
+Epoch 140 | Train MSE: 0.00064 | Val MSE: 0.00591 | Val MAE: 0.022
+Epoch 150 | Train MSE: 0.00054 | Val MSE: 0.00590 | Val MAE: 0.022
+Epoch 160 | Train MSE: 0.00046 | Val MSE: 0.00588 | Val MAE: 0.021
+Epoch 170 | Train MSE: 0.00041 | Val MSE: 0.00590 | Val MAE: 0.021
+Epoch 180 | Train MSE: 0.00036 | Val MSE: 0.00586 | Val MAE: 0.021
+Epoch 190 | Train MSE: 0.00033 | Val MSE: 0.00585 | Val MAE: 0.021
+Epoch 200 | Train MSE: 0.00030 | Val MSE: 0.00581 | Val MAE: 0.021
+Epoch 210 | Train MSE: 0.00027 | Val MSE: 0.00576 | Val MAE: 0.021
+Epoch 220 | Train MSE: 0.00025 | Val MSE: 0.00573 | Val MAE: 0.021
+Epoch 230 | Train MSE: 0.00024 | Val MSE: 0.00568 | Val MAE: 0.020
+Epoch 240 | Train MSE: 0.00022 | Val MSE: 0.00564 | Val MAE: 0.020
+Epoch 250 | Train MSE: 0.00020 | Val MSE: 0.00561 | Val MAE: 0.020
+Epoch 260 | Train MSE: 0.00019 | Val MSE: 0.00557 | Val MAE: 0.020
+Epoch 270 | Train MSE: 0.00018 | Val MSE: 0.00554 | Val MAE: 0.020
+Epoch 280 | Train MSE: 0.00017 | Val MSE: 0.00550 | Val MAE: 0.020
+Epoch 290 | Train MSE: 0.00016 | Val MSE: 0.00546 | Val MAE: 0.020
+Epoch 300 | Train MSE: 0.00015 | Val MSE: 0.00542 | Val MAE: 0.020
+Epoch 310 | Train MSE: 0.00014 | Val MSE: 0.00539 | Val MAE: 0.020
+Epoch 320 | Train MSE: 0.00014 | Val MSE: 0.00536 | Val MAE: 0.019
+Epoch 330 | Train MSE: 0.00013 | Val MSE: 0.00533 | Val MAE: 0.019
+Epoch 340 | Train MSE: 0.00012 | Val MSE: 0.00530 | Val MAE: 0.019
+Epoch 350 | Train MSE: 0.00012 | Val MSE: 0.00528 | Val MAE: 0.019
+Epoch 360 | Train MSE: 0.00011 | Val MSE: 0.00527 | Val MAE: 0.019
+Epoch 370 | Train MSE: 0.00011 | Val MSE: 0.00526 | Val MAE: 0.019
+Epoch 380 | Train MSE: 0.00010 | Val MSE: 0.00524 | Val MAE: 0.019
+Epoch 390 | Train MSE: 0.00010 | Val MSE: 0.00522 | Val MAE: 0.019
+Epoch 400 | Train MSE: 0.00009 | Val MSE: 0.00520 | Val MAE: 0.019
+Epoch 410 | Train MSE: 0.00009 | Val MSE: 0.00518 | Val MAE: 0.019
+Epoch 420 | Train MSE: 0.00009 | Val MSE: 0.00516 | Val MAE: 0.019
+Epoch 430 | Train MSE: 0.00008 | Val MSE: 0.00514 | Val MAE: 0.019
+Epoch 440 | Train MSE: 0.00008 | Val MSE: 0.00513 | Val MAE: 0.019
+Epoch 450 | Train MSE: 0.00008 | Val MSE: 0.00511 | Val MAE: 0.019
+Epoch 460 | Train MSE: 0.00008 | Val MSE: 0.00516 | Val MAE: 0.019
+Epoch 470 | Train MSE: 0.00007 | Val MSE: 0.00510 | Val MAE: 0.018
+Epoch 480 | Train MSE: 0.00007 | Val MSE: 0.00500 | Val MAE: 0.018
+Epoch 490 | Train MSE: 0.00007 | Val MSE: 0.00510 | Val MAE: 0.018
+Epoch 500 | Train MSE: 0.00007 | Val MSE: 0.00509 | Val MAE: 0.018
+Epoch 510 | Train MSE: 0.00006 | Val MSE: 0.00500 | Val MAE: 0.018
+Epoch 520 | Train MSE: 0.00007 | Val MSE: 0.00482 | Val MAE: 0.018
+Epoch 530 | Train MSE: 0.00006 | Val MSE: 0.00507 | Val MAE: 0.018
+Epoch 540 | Train MSE: 0.00006 | Val MSE: 0.00486 | Val MAE: 0.018
+Epoch 550 | Train MSE: 0.00006 | Val MSE: 0.00505 | Val MAE: 0.018
+Epoch 554 | Train MSE: 0.00006 | Val MSE: 0.00511 | Val MAE: 0.018
+Early stopping at epoch 554
+Best epoch: 524
+Test MAE: 0.0301
+Test RMSE: 0.0480
+Test normalized MSE: 0.01453
+Model saved to: /home/infres/justo-24/ME project/pipeline/runs/data_test_20261102_072323/best_model.pt
+History saved to: /home/infres/justo-24/ME project/pipeline/runs/data_test_20261102_072323/history.csv
+Job finished at Mon Nov  2 07:23:29 CET 2026

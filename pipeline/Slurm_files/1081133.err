@@ -1,0 +1,4 @@
+Python 3.11.13 loaded
+Commands: python, python3, pip, pip3
+Pip cache: /tmp/pip_cache_justo-24
+/var/spool/slurmd/job1081133/slurm_script: line 17: /home/infres/justo-24/ME: No such file or directory
