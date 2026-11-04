@@ -1,5 +1,5 @@
 
-from simulation import run_simulation
+from src.me_project_speit.simulation import run_simulation
 import numpy as np
 import random as rd
 import datetime
