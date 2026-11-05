@@ -15,3 +15,8 @@ __pycache__/
 
 # EasyFEA
 /EasyFEA/
+
+results/
+.python-version
+
+EasyFEA_3D_custom_mesh/

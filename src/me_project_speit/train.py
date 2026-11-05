@@ -10,7 +10,7 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
-from models.mlp import MLP
+from src.me_project_speit.models.mlp import MLP
 
 
 def parse_args():
