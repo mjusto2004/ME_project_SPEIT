@@ -80,7 +80,7 @@ sbatch scripts/slurm/extended_dataset.sbatch
 |---|---|
 | **Issue** | 85 of 560 nodes in `coord.npy` are ordered differently from the columns of `data_test.csv`. |
 | **Presumed cause** | Node numbering depends on machine/version: `data_test.csv` = Linux (EasyFEA 7.2.0), `coord.npy` = macOS (EasyFEA 7.1.0). |
-| **Affected** | `datasets/observe.py` (wrong node positions in plots); future models using `coord.npy` (e.g. CNN). |
+| **Affected** | `datasets/observe.py` (wrong node positions in plots); future models using `coord.npy` (e.g. CNN on an interpolated grid). |
 | **Not affected** | Training results above (all generated on Linux, same numbering as `data_test.csv`). |
 | **In place** | `extended_dataset/build.py` checks node order before combining. |
 | **Proposed fix** | Replace `coord.npy` with coordinates matching `data_test.csv`; align nodes by coordinates in `observe.py`. |
