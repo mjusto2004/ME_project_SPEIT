@@ -1,36 +1,34 @@
+"""Multi-layer perceptron mapping the input parameters to the output field."""
+
+from collections.abc import Sequence
 
 import torch
-import torch.nn as nn
+from torch import nn
+
+from .base import SurrogateModel
+from .registry import register_model
 
 
-class MLP(nn.Module):
-    def __init__(self):
+@register_model("mlp")
+class MLP(SurrogateModel):
+    """Fully connected ReLU network; adapts to any dataset shape.
+
+    ``n_inputs -> hidden[0] -> ... -> hidden[-1] -> n_outputs``
+    """
+
+    def __init__(
+        self,
+        n_inputs: int,
+        n_outputs: int,
+        hidden: Sequence[int] = (128, 256, 256),
+    ):
         super().__init__()
+        sizes = [n_inputs, *hidden]
+        layers: list[nn.Module] = []
+        for a, b in zip(sizes[:-1], sizes[1:]):
+            layers += [nn.Linear(a, b), nn.ReLU()]
+        layers.append(nn.Linear(sizes[-1], n_outputs))
+        self.network = nn.Sequential(*layers)
 
-        self.network = nn.Sequential(
-            nn.Linear(3, 128),
-            nn.ReLU(),
-
-            nn.Linear(128, 256),
-            nn.ReLU(),
-
-            nn.Linear(256, 256),
-            nn.ReLU(),
-
-            nn.Linear(256, 560)
-        )
-
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.network(x)
-
-
-if __name__ == "__main__":
-    model = MLP()
-
-    # Test with 10 simulations
-    x = torch.randn(10, 3)
-    y = model(x)
-
-    print(model)
-    print("Input shape:", x.shape)
-    print("Output shape:", y.shape)

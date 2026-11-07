@@ -1,141 +1,110 @@
-# Copyright (C) 2021-2024 Université Gustave Eiffel.
-# Copyright (C) 2025-2026 Université Gustave Eiffel, INRIA.
-# This file is part of the EasyFEA project.
-# EasyFEA is distributed under the terms of the GNU General Public License v3, see LICENSE.txt and CREDITS.md for more information.
+"""Transient thermal finite-element simulation (requires ``EasyFEA``).
 
-"""
-Thermal2_Flux
-========
-
-Transient thermal simulation: with user defined BCs neumann
+A unit cube is heated by a cylindrical source along its z axis and cooled by
+convection on its six faces. :func:`run_simulation` returns the temperature
+field at the last time step.
 """
 
-# sphinx_gallery_thumbnail_number = -1
-import matplotlib.pyplot as plt
+from __future__ import annotations
+
 import numpy as np
-from EasyFEA import Terminal, Folder, Models, ElemType, Simulations, PyVista
-from EasyFEA.Geoms import Circle, Domain, Point
 
-def run_simulation(T0, P0, h):
-    '''Runs a simulation of the engine with the given power, temperature and h as inputs'''
-    Terminal.Clear()
+from . import config
 
-    # ----------------------------------------------
-    # Configuration
-    # ----------------------------------------------
-    dim = 3  # Set the simulation dimension (2D or 3D)
 
-    # outputs
-    folder = Folder.Results_Dir() + f"{dim}D"
-    makeMovie = False
-    result = "thermal"
-    # Unit kg. m. s
-    # geom
-    a = 1
-    mesh_resolution_r = 10
-    mesh_resolution_Domain = 8
-    # Thermal properties
-    # h = 300 # W.m-2.K-1
-    rho = 2700 # kg.m-3
-    Cp = 896 # J.kg-1.K-1
-    k = 237 # W.m-1.K-1
-    Diameter=a/3.
-    #heat generation coefficient: Eta
-    Eta = 0.05
-    power = P0*Eta # 450kW.h
-    power_surficial = power/(np.pi*Diameter*1)
-    print(power_surficial)
-    # load
-    T_ext=293 # K
-    Tmax = 10000 
-    #T0= 293
-    N = 100
-    dt = Tmax / N
-    #Tmax = dt
-    # ----------------------------------------------
-    # Mesh
-    # ----------------------------------------------
-    domain = Domain(Point(0,0), Point(a, a), a / mesh_resolution_Domain)
-    circle = Circle(Point(a / 2, a / 2), diam=Diameter, meshSize=a / mesh_resolution_r)
+def build_mesh():
+    """Build the 3D tetrahedral mesh of the cube and the heat-source circle.
 
-    if dim == 2:
-        mesh = domain.Mesh_2D([circle], ElemType.TRI6)
-    else:
-        mesh = domain.Mesh_Extrude([circle], [0, 0, a], [4], ElemType.TETRA4) # PRISM18 TETRA4
+    Returns
+    -------
+    mesh, circle
+        The EasyFEA mesh and the circle (cross-section of the source).
+    """
+    from EasyFEA import ElemType
+    from EasyFEA.Geoms import Circle, Domain, Point
 
-    nodesX0 = mesh.Nodes_Conditions(lambda x, y, z: x == 0)
-    nodesXa = mesh.Nodes_Conditions(lambda x, y, z: x == a)
-    # YZ
-    nodesY0 = mesh.Nodes_Conditions(lambda x, y, z: y == 0)
-    nodesYa = mesh.Nodes_Conditions(lambda x, y, z: y == a)
-    nodesZ0 = mesh.Nodes_Conditions(lambda x, y, z: z == 0)
-    nodesZa = mesh.Nodes_Conditions(lambda x, y, z: z == a)
-    nodes_convection = nodes_convection = np.unique(np.concatenate([nodesX0, nodesXa, nodesY0, nodesYa, nodesZ0, nodesZa]))
-    #nodes_convection = nodes_convection = np.unique(np.concatenate([nodesX0, nodesXa, nodesY0, nodesYa]))
-    nodesCircle = mesh.Nodes_Cylinder(circle, direction=[0, 0, 1])
+    a = config.CUBE_SIZE
+    domain = Domain(Point(0, 0), Point(a, a), a / config.MESH_RESOLUTION_DOMAIN)
+    circle = Circle(
+        Point(a / 2, a / 2),
+        diam=config.SOURCE_DIAMETER,
+        meshSize=a / config.MESH_RESOLUTION_SOURCE,
+    )
+    mesh = domain.Mesh_Extrude(
+        [circle], [0, 0, a], [config.EXTRUSION_LAYERS], ElemType.TETRA4
+    )
+    return mesh, circle
 
-    if dim == 3:
-        print(f"Volume: {mesh.volume:.3}")
 
-    # ----------------------------------------------
-    # Simulation
-    # ----------------------------------------------
-    thermalModel = Models.Thermal(k=k, c=Cp, thickness=1)
-    simu = Simulations.Thermal(mesh, thermalModel)
-    simu.rho = rho
+def run_simulation(verbose: bool = False, **params: float) -> np.ndarray:
+    """Run one transient thermal simulation.
 
-    #simu.add_dirichlet(nodesX0, [0], ["t"])
-    #simu.add_dirichlet(nodesXa, [40], ["t"])
-    #simu.add_dirichlet(nodes_convection, [293], ["t"])
-    # Set the parabolic algorithm for the solver
+    Parameters
+    ----------
+    verbose : bool
+        Print the progress of the time loop.
+    **params : float
+        Any of the names in ``config.PARAM_DEFAULTS``; missing ones take their
+        default value.
+
+        - ``T0``: initial uniform temperature of the cube (K).
+        - ``P0``: power of the source (W); only ``HEAT_EFFICIENCY`` is injected.
+        - ``h``: convection coefficient on the cube faces (W.m-2.K-1).
+
+    Returns
+    -------
+    numpy.ndarray
+        Temperature (deg C) at every mesh node at the final time, shape
+        ``(config.N_NODES,)``.
+    """
+    from EasyFEA import Models, Simulations
+
+    unknown = set(params) - set(config.PARAM_DEFAULTS)
+    if unknown:
+        raise ValueError(
+            f"Unknown simulation parameter(s) {sorted(unknown)}; "
+            f"available: {sorted(config.PARAM_DEFAULTS)}"
+        )
+    p = {**config.PARAM_DEFAULTS, **params}
+    t0, power, h = p["T0"], p["P0"], p["h"]
+
+    a = config.CUBE_SIZE
+    mesh, circle = build_mesh()
+
+    # Node sets: the six faces (convection) and the source cylinder (heating).
+    faces = [
+        mesh.Nodes_Conditions(lambda x, y, z: x == 0),
+        mesh.Nodes_Conditions(lambda x, y, z: x == a),
+        mesh.Nodes_Conditions(lambda x, y, z: y == 0),
+        mesh.Nodes_Conditions(lambda x, y, z: y == a),
+        mesh.Nodes_Conditions(lambda x, y, z: z == 0),
+        mesh.Nodes_Conditions(lambda x, y, z: z == a),
+    ]
+    nodes_convection = np.unique(np.concatenate(faces))
+    nodes_source = mesh.Nodes_Cylinder(circle, direction=[0, 0, 1])
+
+    # Heat flux per unit of source surface.
+    power_surficial = power * config.HEAT_EFFICIENCY / (np.pi * config.SOURCE_DIAMETER * 1)
+
+    model = Models.Thermal(k=config.CONDUCTIVITY, c=config.CP, thickness=1)
+    simu = Simulations.Thermal(mesh, model)
+    simu.rho = config.RHO
+
+    dt = config.T_MAX / config.N_STEPS
     simu.Solver_Set_Parabolic_Algorithm(alpha=0.5, dt=dt)
-    simu._Set_solutions(simu.problemType, np.ones(mesh.Nn) * T0)
-    #simu.add_surfLoad(nodesZ0, [power_surficial], ["t"])
-    t = -dt  # init time
-    #simu.Get_x0(T0)
-# Target point
-    target = np.array([0.5, 1/3., 0.5])
+    simu._Set_solutions(simu.problemType, np.ones(mesh.Nn) * t0)
 
-    # Find the nearest mesh node
-    dist = np.linalg.norm(mesh.coord - target, axis=1)
-    node_id = np.argmin(dist)
-
-    print("Selected node:", node_id)
-    print("Coordinates:", mesh.coord[node_id])
-    time_history = []
-    temperature_history = []
-    #
-    while t < Tmax:
+    t = -dt
+    while t < config.T_MAX:
         t += dt
-        T = simu.thermal
-        phi = h * (T_ext - T[nodes_convection])
+        temperature = simu.thermal
+        flux = h * (config.T_EXTERIOR - temperature[nodes_convection])
         simu.Bc_Init()
-        simu.add_surfLoad(nodes_convection, [phi], ["t"])
-        simu.add_surfLoad(nodesCircle, [power_surficial], ["t"])
-        #
+        simu.add_surfLoad(nodes_convection, [flux], ["t"])
+        simu.add_surfLoad(nodes_source, [power_surficial], ["t"])
         simu.Solve()
         simu.Save_Iter()
-        # record the temperature
-        time_history.append(t)
-        temperature_history.append(simu.thermal[node_id]-273)
+        if verbose:
+            print(f"{t:.3f} s", end="\r")
 
-        print(f"{t:.3f} s", end="\r")
-
-    # ----------------------------------------------
-    # Results
-    # ----------------------------------------------
-
-    print(simu)
-
-
-    T_celsius = simu.thermal - 273.15
-
-    return T_celsius
-
-
-
-
-if __name__ == "__main__":
-
-    a = run_simulation(293, 300000, 300)
-    print(len(a))
+    return simu.thermal - 273.15

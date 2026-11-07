@@ -1,17 +1,28 @@
 [project]
 name = "me-project-speit"
 version = "0.1.0"
-description = "Add your description here"
+description = "Deep-learning surrogate model predicting transient 3D temperature fields from finite-element simulations."
 readme = "README.md"
 authors = [
     { name = "msenart", email = "mathieu.senart@gmail.com" }
 ]
-requires-python = ">=3.13"
-dependencies = []
+requires-python = ">=3.12"
+dependencies = [
+    "numpy",
+    "torch",
+]
+
+[project.optional-dependencies]
+# Finite-element simulation, dataset generation and 3D plots
+sim = ["EasyFEA"]
+dev = ["pytest"]
 
 [project.scripts]
-me-project-speit = "me_project_speit:main"
+me-project-speit = "me_project_speit.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.12.17,<0.13.0"]
 build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
