@@ -21,8 +21,11 @@ from pathlib import Path
 from typing import ClassVar
 
 import numpy as np
+import torch
+from torch.utils.data import DataLoader, TensorDataset
 
 from .. import config
+from ..parallel import parallel_map
 
 DEFAULT_DATA_DIR = Path("data")
 
@@ -82,9 +85,10 @@ class DatasetSpec:
     kind : str
         Registered dataset kind (see :func:`available_kinds`); decides which
         :class:`Dataset` subclass reads the file.
-    rows_per_sample : int
-        Number of consecutive CSV rows belonging to one simulation. Splits are
-        made per simulation so none is shared between train and test.
+    rows_per_sample : int or None
+        Number of consecutive CSV rows belonging to one simulation (``None``
+        when it varies from one simulation to the next). Splits are made per
+        simulation so none is shared between train and test.
     """
 
     name: str
@@ -94,7 +98,7 @@ class DatasetSpec:
     mesh_id: str | None = None
     input_ranges: dict[str, tuple[float, float]] = field(default_factory=dict)
     kind: str = "field"
-    rows_per_sample: int = 1
+    rows_per_sample: int | None = 1
 
     def __post_init__(self):
         if self.kind not in _KINDS:
@@ -223,6 +227,11 @@ class Dataset(ABC):
 
     kind: ClassVar[str] = ""  # set by @register_dataset
 
+    #: Simulation parameters this kind can vary: name -> (min, max).
+    param_ranges: ClassVar[dict] = config.PARAM_RANGES
+    #: Parameters varied by default (``generate`` without ``--params``).
+    default_params: ClassVar[tuple] = ("T0", "P0", "h")
+
     def __init__(self, X: np.ndarray, Y: np.ndarray, spec: DatasetSpec):
         self.X, self.Y, self.spec = X, Y, spec
 
@@ -254,22 +263,23 @@ class Dataset(ABC):
         """Outputs reshaped as ``(n_simulations, n_nodes)``."""
 
     # ---- helpers for subclasses --------------------------------------------
-    @staticmethod
-    def check_params(input_names) -> list[str]:
-        """Validate simulation parameter names against ``config.PARAM_RANGES``."""
+    @classmethod
+    def check_params(cls, input_names) -> list[str]:
+        """Validate simulation parameter names against ``cls.param_ranges``."""
         names = list(input_names)
-        unknown = [n for n in names if n not in config.PARAM_RANGES]
+        unknown = [n for n in names if n not in cls.param_ranges]
         if unknown:
             raise ValueError(
-                f"Unknown input parameter(s) {unknown}; available: {sorted(config.PARAM_RANGES)}"
+                f"Unknown input parameter(s) {unknown} for kind '{cls.kind}'; "
+                f"available: {sorted(cls.param_ranges)}"
             )
         if len(set(names)) != len(names):
             raise ValueError("Duplicate input parameters.")
         return names
 
-    @staticmethod
-    def ranges(names) -> dict[str, tuple[float, float]]:
-        return {n: config.PARAM_RANGES[n] for n in names}
+    @classmethod
+    def ranges(cls, names) -> dict[str, tuple[float, float]]:
+        return {n: cls.param_ranges[n] for n in names}
 
     # ---- shared behaviour --------------------------------------------------
     @classmethod
@@ -280,14 +290,23 @@ class Dataset(ABC):
         name: str = "cube",
         seed: int | None = None,
         verbose: bool = True,
+        workers: int = 1,
     ) -> "Dataset":
-        """Run ``n`` simulations with parameters drawn uniformly in their ranges."""
+        """Run ``n`` simulations with parameters drawn uniformly in their ranges.
+
+        The simulations run in ``workers`` processes. The parameters are all
+        drawn first, in this process, so the dataset is the same whatever
+        the number of workers.
+        """
         spec = cls.build_spec(input_names, name=name)
         rng = np.random.default_rng(seed)
+        all_params = [
+            {k: rng.uniform(*spec.input_ranges[k]) for k in spec.input_ranges} for _ in range(n)
+        ]
         blocks = []
-        for i in range(n):
-            params = {k: rng.uniform(*spec.input_ranges[k]) for k in spec.input_ranges}
-            rows = np.asarray(cls.simulation_rows(spec, params), dtype=float)
+        results = parallel_map(cls.simulation_rows, [spec] * n, all_params, workers=workers)
+        for i, rows in enumerate(results):
+            rows = np.asarray(rows, dtype=float)
             if rows.shape != (spec.rows_per_sample, spec.n_columns):
                 raise ValueError(
                     f"{cls.__name__}.simulation_rows returned shape {rows.shape}, expected "
@@ -328,6 +347,32 @@ class Dataset(ABC):
             raise ValueError("Dataset contains NaN or infinite values.")
         return cls._from_rows(data, spec)
 
+    def count_simulations(self, row_indices: np.ndarray) -> int:
+        """Number of simulations the given rows belong to."""
+        return len(row_indices) // self.spec.rows_per_sample
+
+    def make_loader(
+        self,
+        X: np.ndarray,
+        Y: np.ndarray,
+        row_indices: np.ndarray,
+        batch_size: int,
+        shuffle: bool,
+        pin_memory: bool = False,
+    ):
+        """Iterable of batches ``(inputs..., target)`` over the given rows.
+
+        ``X`` and ``Y`` are the (normalised) inputs and outputs of the whole
+        dataset. The last element of a batch is the target, the others are
+        passed to ``model(*inputs)``. Here a batch is ``(x, y)``: independent rows.
+        """
+        tensors = TensorDataset(
+            torch.from_numpy(X[row_indices]), torch.from_numpy(Y[row_indices])
+        )
+        return DataLoader(
+            tensors, batch_size=batch_size, shuffle=shuffle, pin_memory=pin_memory
+        )
+
     def save(self, path: str | Path) -> Path:
         """Write the CSV and its JSON sidecar; returns the CSV path."""
         path = Path(path)
@@ -358,13 +403,19 @@ def save_dataset(
     n: int,
     folder: str | Path = DEFAULT_DATA_DIR,
     seed: int | None = None,
-    input_names=("T0", "P0", "h"),
+    input_names=None,
     kind: str = "field",
+    workers: int = 1,
 ) -> Path:
-    """Generate ``n`` simulations of ``kind``; write a timestamped CSV and its JSON sidecar."""
+    """Generate ``n`` simulations of ``kind``; write a timestamped CSV and its JSON sidecar.
+
+    ``input_names=None`` varies the default parameters of the kind.
+    """
     stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     stem = f"dataset_{stamp}_{n}"
-    dataset = get_dataset_class(kind).generate(n, input_names, name=stem, seed=seed)
+    dataset_class = get_dataset_class(kind)
+    input_names = input_names or dataset_class.default_params
+    dataset = dataset_class.generate(n, input_names, name=stem, seed=seed, workers=workers)
     path = dataset.save(Path(folder) / f"{stem}.csv")
     print(f"Dataset saved in: {path} ({dataset.spec.describe()})")
     return path

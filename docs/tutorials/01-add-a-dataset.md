@@ -26,6 +26,8 @@ No header, comma-separated, one row per sample, all numbers. Columns are the inp
 
 For `pointwise`, the rows of one simulation must be **contiguous** and every simulation must have the same number of rows (`rows_per_sample`).
 
+> `graph` datasets are different: they have an extra leading `sim` column, a variable number of rows per simulation, and a third file `name_edges.npz` with the connections. They are made by `generate --kind graph`; see the README (section *The `graph` type*) before building one by hand.
+
 ### The JSON (`DatasetSpec`)
 
 ```json

@@ -32,6 +32,8 @@ t0, power, h, diameter = p["T0"], p["P0"], p["h"], p["D"]
 Then replace `config.SOURCE_DIAMETER` by `diameter` in the heat-flux formula. If the quantity changes the **geometry or mesh** (as a diameter does), also pass it to `build_mesh(...)`.
 
 > ⚠ **Mesh changes are the dangerous case.** A different diameter generally produces a different number of nodes, which breaks the fixed-size `field` dataset type (`n_outputs = N_NODES`). Prefer parameters that do not touch the mesh (material properties, loads, boundary conditions, initial temperature). If you must change the mesh, give those datasets a new `mesh_id`, or use `pointwise`, and see [tutorial 4](04-add-a-dataset-type.md).
+>
+> The `graph` type is the one made for meshes that change from one simulation to the next: its parameters live in `SPONGE_PARAM_RANGES` (`config.py`) and its simulation in `sponge.py`. `field` and `pointwise` only accept the parameters of `PARAM_RANGES` and refuse e.g. `r` or `res`.
 
 ## Step 3 — generate and check
 

@@ -35,3 +35,16 @@ PARAM_RANGES = {
 # --- Reference mesh ----------------------------------------------------------
 N_NODES = 560  # number of nodes of the mesh built from the settings above
 MESH_ID = "cube_560"
+
+# --- "Sponge" geometry (dataset kind 'graph'): unit cube minus spherical holes -
+# Parameters sampled for each simulation, as (min, max). 'res' is rounded to an int.
+SPONGE_PARAM_RANGES = {
+    "T0": PARAM_RANGES["T0"],
+    "P0": PARAM_RANGES["P0"],
+    "h": PARAM_RANGES["h"],
+    "r": (0.08, 0.22),  # radius of the holes (m)
+    "res": (5, 10),  # mesh divisions of the cube edge (element size = 1/res)
+}
+SPONGE_PARAM_DEFAULTS = {**PARAM_DEFAULTS, "r": 0.15, "res": 8}
+INTEGER_PARAMS = {"res"}
+MAX_HOLES = 20  # the number of holes is drawn in 1..MAX_HOLES

@@ -11,7 +11,6 @@ from pathlib import Path
 import numpy as np
 import torch
 from torch import nn
-from torch.utils.data import DataLoader, TensorDataset
 
 from .datasets import DEFAULT_DATA_DIR, load_dataset, load_spec, resolve_dataset
 from .models import build_model, check_compatible
@@ -62,11 +61,12 @@ def evaluate(model, loader, device, y_std):
     count = 0
 
     with torch.no_grad():
-        for xb, yb in loader:
-            xb = xb.to(device, non_blocking=True)
+        for batch in loader:
+            *inputs, yb = batch  # the last element is the target
+            inputs = [t.to(device, non_blocking=True) for t in inputs]
             yb = yb.to(device, non_blocking=True)
 
-            difference = model(xb) - yb
+            difference = model(*inputs) - yb
             real_difference = difference * y_std
 
             sq_norm += difference.square().sum().item()
@@ -124,13 +124,9 @@ def train(cfg: TrainConfig) -> dict:
     Y_scaled = (Y - y_mean) / y_std
 
     def make_loader(indices, shuffle):
-        tensors = TensorDataset(
-            torch.from_numpy(X_scaled[indices]), torch.from_numpy(Y_scaled[indices])
-        )
-        return DataLoader(
-            tensors,
-            batch_size=cfg.batch_size,
-            shuffle=shuffle,
+        # Each kind of dataset knows how to build its batches (rows, whole graphs...).
+        return data.make_loader(
+            X_scaled, Y_scaled, indices, cfg.batch_size, shuffle,
             pin_memory=device.type == "cuda",
         )
 
@@ -153,11 +149,10 @@ def train(cfg: TrainConfig) -> dict:
 
     print(f"Model: {cfg.model} {cfg.model_kwargs or ''}")
     print(f"Dataset: {cfg.dataset} ({spec.describe()})")
-    rps = spec.rows_per_sample
     print(f"Simulations: {n} ({len(X)} rows)")
-    print(f"Train: {len(train_idx) // rps}")
-    print(f"Validation: {len(val_idx) // rps}")
-    print(f"Test: {len(test_idx) // rps}")
+    print(f"Train: {data.count_simulations(train_idx)}")
+    print(f"Validation: {data.count_simulations(val_idx)}")
+    print(f"Test: {data.count_simulations(test_idx)}")
 
     # --- Training loop ------------------------------------------------------
     best_val_mse = float("inf")
@@ -175,12 +170,13 @@ def train(cfg: TrainConfig) -> dict:
             train_sum = 0.0
             train_elements = 0
 
-            for xb, yb in train_loader:
-                xb = xb.to(device, non_blocking=True)
+            for batch in train_loader:
+                *inputs, yb = batch  # the last element is the target
+                inputs = [t.to(device, non_blocking=True) for t in inputs]
                 yb = yb.to(device, non_blocking=True)
 
                 optimizer.zero_grad()
-                loss = criterion(model(xb), yb)
+                loss = criterion(model(*inputs), yb)
                 loss.backward()
                 optimizer.step()
 

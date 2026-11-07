@@ -24,12 +24,14 @@ from .base import (
 # Importing the modules registers the kinds.
 from .field import FieldDataset  # noqa: E402
 from .pointwise import PointwiseDataset  # noqa: E402
+from .graph import GraphDataset  # noqa: E402
 
 __all__ = [
     "DEFAULT_DATA_DIR",
     "Dataset",
     "DatasetSpec",
     "FieldDataset",
+    "GraphDataset",
     "PointwiseDataset",
     "Split",
     "available_kinds",

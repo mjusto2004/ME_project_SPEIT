@@ -36,9 +36,12 @@
 | `A model named 'x' is already registered.` | two models share a name | rename one |
 | `has N columns and no description file 'x.json'` | CSV without sidecar | create the JSON ([tutorial 1](01-add-a-dataset.md)) |
 | `expected N columns (k inputs + m outputs), got M` | JSON and CSV disagree | fix `input_names` / `n_outputs` |
+| `Missing edges file 'x_edges.npz' next to x.csv` | a graph dataset copied without its connections | copy the `_edges.npz` file with the CSV and the JSON |
+| `an edge points to a node outside its simulation` / `the 'sim' column must be 0, 1, 2...` | corrupted or hand-edited graph files | regenerate the dataset |
+| `no valid sponge after 20 draws` | the random holes keep cutting the cube in pieces (radius range too large for the number of holes) | reduce `r` in `SPONGE_PARAM_RANGES` or `MAX_HOLES` in `config.py` |
 | `rows is not a multiple of rows_per_sample` | wrong `rows_per_sample`, or truncated CSV | fix the JSON or regenerate |
 | `Unknown dataset kind 'x'. Available: [...]` | `kind` in the JSON is not registered (typo, or the module is not imported in `datasets/__init__.py`) | fix the JSON or register it ([tutorial 4](04-add-a-dataset-type.md)) |
-| `Unknown input parameter(s) [...]` / `Unknown simulation parameter(s)` | name not in `config.PARAM_*` | add it ([tutorial 2](02-add-a-simulation-parameter.md)) |
+| `Unknown input parameter(s) [...] for kind 'x'` / `Unknown simulation parameter(s)` | name not in the parameters of that kind (`PARAM_RANGES`, or `SPONGE_PARAM_RANGES` for `graph`) | add it ([tutorial 2](02-add-a-simulation-parameter.md)) |
 | `This model expects k inputs (...), got n` | wrong number of inputs for `Predictor.predict` | pass inputs in the order of `predictor.spec.input_names` |
 | `The rebuilt mesh does not match the node coordinates in data/coord.npy` | different gmsh version → different node order | use the same gmsh version, or regenerate the dataset |
 | `CUDA is unavailable` | `--device cuda` without a CUDA build of torch / no GPU | see *GPU* in the README, or use `--device cpu` |

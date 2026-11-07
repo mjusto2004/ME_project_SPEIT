@@ -1,4 +1,4 @@
-"""Command-line interface: ``me-project-speit {generate,train,show,list}``."""
+"""Command-line interface: ``me-project-speit {generate,train,show,plot,list}``."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from pathlib import Path
 
 from . import __version__
 from .datasets import available_kinds
+from .parallel import default_workers
 
 DEFAULT_DATA_DIR = Path("data")
 
@@ -24,10 +25,18 @@ def build_parser() -> argparse.ArgumentParser:
     gen.add_argument("--output-dir", type=Path, default=DEFAULT_DATA_DIR)
     gen.add_argument("--seed", type=int, default=None)
     gen.add_argument(
+        "--workers",
+        type=int,
+        default=default_workers(),
+        help="number of processes running simulations at the same time (default: %(default)s, "
+        "the number of cores up to 8). The dataset does not depend on it.",
+    )
+    gen.add_argument(
         "--params",
         nargs="+",
-        default=["T0", "P0", "h"],
-        help="simulation parameters to vary (inputs of the dataset); others keep defaults",
+        default=None,
+        help="simulation parameters to vary (inputs of the dataset); others keep defaults. "
+        "Default depends on --kind",
     )
 
     gen.add_argument(
@@ -57,6 +66,12 @@ def build_parser() -> argparse.ArgumentParser:
     show.add_argument("--dataset", default="data_test", help="CSV path or name in --data-dir")
     show.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
     show.add_argument("--ids", type=int, nargs="+", default=[0, 1])
+
+    plot = sub.add_parser("plot", help="plot a finished training run (curves, predictions)")
+    plot.add_argument("--run", type=Path, default=None, help="run folder (default: the latest in runs/)")
+    plot.add_argument("--sample", type=int, default=0, help="which test simulation to draw")
+    plot.add_argument("--half", action="store_true", help="draw only the nodes with y <= 0.5 (see inside)")
+    plot.add_argument("--save", default=None, help="save PNG files <SAVE>_curves.png / _mesh.png instead of opening windows")
 
     ls = sub.add_parser("list", help="list available models or datasets")
     ls.add_argument("what", choices=["models", "datasets"])
@@ -94,7 +109,8 @@ def main(argv: list[str] | None = None) -> None:
 
         try:
             save_dataset(
-                args.n_samples, folder=args.output_dir, seed=args.seed, input_names=args.params, kind=args.kind
+                args.n_samples, folder=args.output_dir, seed=args.seed, input_names=args.params, kind=args.kind,
+                workers=args.workers
             )
         except ValueError as exc:
             parser.error(str(exc))
@@ -125,7 +141,21 @@ def main(argv: list[str] | None = None) -> None:
         from .datasets import resolve_dataset
         from .visualization import plot_fields
 
-        plot_fields(resolve_dataset(args.dataset, args.data_dir), ids=args.ids)
+        try:
+            plot_fields(resolve_dataset(args.dataset, args.data_dir), ids=args.ids)
+        except NotImplementedError as exc:
+            parser.exit(2, f"error: {exc}\n")
+
+    elif args.command == "plot":
+        from .plotting import latest_run, plot_run
+
+        try:
+            run = args.run or latest_run()
+            print(f"Run: {run}")
+            for path in plot_run(run, sample=args.sample, half=args.half, save=args.save):
+                print(f"Saved: {path}")
+        except (FileNotFoundError, ValueError) as exc:
+            parser.exit(2, f"error: {exc}\n")
 
     elif args.command == "list":
         _list(args.what, args.data_dir)

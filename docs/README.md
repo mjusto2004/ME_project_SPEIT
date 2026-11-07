@@ -34,10 +34,12 @@ Three ideas keep datasets and models interchangeable:
 | `config.py` | physical constants, `PARAM_DEFAULTS`, `PARAM_RANGES`, `N_NODES`, `MESH_ID` |
 | `simulation.py` | `build_mesh()`, `run_simulation(**params)` (needs EasyFEA) |
 | `datasets/base.py` | abstract `Dataset`, `DatasetSpec`, `@register_dataset`, `load_dataset`, `save_dataset`, `split_indices` |
-| `datasets/field.py`, `pointwise.py` | the two dataset types: `FieldDataset`, `PointwiseDataset` |
+| `datasets/field.py`, `pointwise.py`, `graph.py` | the dataset types: `FieldDataset`, `PointwiseDataset`, `GraphDataset` (variable meshes + connections; the advanced example) |
+| `sponge.py` | simulation of a cube with random spherical holes, used by `GraphDataset` |
 | `models/base.py` | `SurrogateModel`, `IncompatibleError` |
 | `models/registry.py` | `@register_model`, `build_model`, `check_compatible`, `compatible_models` |
 | `models/mlp.py` | `MLP` (field) and `CoordMLP` (pointwise) |
+| `models/gnn.py` | `GNN` (graph) |
 | `training.py` | `TrainConfig`, `train()` |
 | `inference.py` | `Predictor` |
 | `cli.py` | the `me-project-speit` command |

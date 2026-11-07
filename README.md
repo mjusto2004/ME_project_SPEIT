@@ -24,9 +24,10 @@ Once trained, the network replaces a ~0.5 s simulation with a single forward pas
 ├── resources/                exploratory notebooks, original scripts, Slurm job
 ├── src/me_project_speit/
 │   ├── config.py             physical constants and shared dimensions
-│   ├── simulation.py         finite-element simulation (needs EasyFEA)
-│   ├── datasets/             abstract Dataset + one subclass per dataset type (field.py, pointwise.py)
-│   ├── models/               model registry + compatibility (base.py, registry.py, mlp.py)
+│   ├── simulation.py         finite-element simulation of the cube with a cylindrical source (needs EasyFEA)
+│   ├── sponge.py             simulation of a cube with random spherical holes (needs EasyFEA)
+│   ├── datasets/             abstract Dataset + one subclass per dataset type (field.py, pointwise.py, graph.py)
+│   ├── models/               model registry + compatibility (base.py, registry.py, mlp.py, gnn.py)
 │   ├── training.py           training loop, early stopping, evaluation
 │   ├── inference.py          Predictor: load a checkpoint and predict
 │   ├── visualization.py      3D plots of stored fields (needs EasyFEA)
@@ -55,6 +56,7 @@ Extras:
 
 - *(none)* – `numpy` and `torch`: enough to **train** on an existing dataset.
 - `sim` – adds `EasyFEA` (and gmsh): needed to **generate** data and **plot** fields.
+- `plot` – adds `matplotlib`: needed by `me-project-speit plot`.
 - `dev` – adds `pytest`.
 
 ## Usage
@@ -69,7 +71,7 @@ me-project-speit generate -n 90 --params T0 h      # vary only T0 and h (P0 keep
 me-project-speit generate -n 90 --kind pointwise   # one row per node, coordinates as inputs
 ```
 
-Runs `n` simulations with random inputs (`--params`, default `T0 P0 h`; ranges and defaults in `config.py`) and writes `data/dataset_<timestamp>_<n>.csv` **and** `data/dataset_<timestamp>_<n>.json`. Each CSV row holds the inputs followed by the 560 nodal temperatures in °C.
+Runs `n` simulations, **in parallel** (`--workers N`, default: the number of cores up to 8; `--workers 1` runs in the current process). The dataset is the same whatever the number of workers, so a given `--seed` always gives the same file. Typical gain for 40 simulations on 8 workers: 3.8x for `graph`, 2.8x for `pointwise` (start-up of the worker processes costs a few seconds, so the gain grows with `n`). Each simulation uses random inputs (`--params`, default `T0 P0 h`; ranges and defaults in `config.py`) and writes `data/dataset_<timestamp>_<n>.csv` **and** `data/dataset_<timestamp>_<n>.json`. Each CSV row holds the inputs followed by the 560 nodal temperatures in °C.
 
 ### 2. Train
 
@@ -105,7 +107,18 @@ me-project-speit show --dataset data/data_test.csv --ids 0 1
 
 Opens an interactive 3D plot per simulation, with a shared colour scale.
 
-### 4. List models and datasets
+### 4. Plot a training run
+
+```bash
+uv sync --extra plot                              # installs matplotlib (once)
+uv run me-project-speit plot                      # the latest run in runs/
+uv run me-project-speit plot --run runs/<folder> --sample 3 --half
+uv run me-project-speit plot --save figures/run1  # write PNG files instead of opening windows
+```
+
+Two figures: the **training curves** (loss and validation MAE per epoch, with the best epoch marked) for any model, and, for `graph` runs, the **true temperature, the prediction and the absolute error** on the nodes of one test mesh (`--sample` picks which; `--half` keeps only y <= 0.5 to see inside the cube), with a predicted-vs-true plot and the error histogram over all test simulations. The 3D views open in a window you can rotate.
+
+### 5. List models and datasets
 
 ```bash
 me-project-speit list models
@@ -148,10 +161,30 @@ Each dataset type is a subclass of the abstract `Dataset` (`src/me_project_speit
 |---------------|-------|-----|-----------------|--------|
 | `field` (default) | `FieldDataset` | one per simulation | `T0, P0, h` → all 560 node temperatures | `mlp` |
 | `pointwise` | `PointwiseDataset` | one per (simulation, node) | `T0, P0, h, x, y, z` → temperature at that node | `coord_mlp` |
+| `graph` | `GraphDataset` | one per node; every simulation has its own mesh | `T0, P0, h, r, res, x, y, z, heated` + the node connections → temperature at that node | `gnn` |
 
 A `pointwise` dataset has `n_simulations × 560` rows, with the rows of one simulation contiguous (`rows_per_sample` in the JSON). Train/validation/test are split **per simulation**, never per row, so the nodes of a test simulation never leak into training. Each model lists the dataset classes it accepts (`supported_datasets`); training `mlp` on a pointwise dataset (or `coord_mlp` on a field one) stops immediately with an error listing the models that do fit.
 
 A new type is a subclass implementing three methods (`build_spec`, `simulation_rows`, `fields`); loading, saving, generation and splitting are inherited. See [tutorial 4](docs/tutorials/04-add-a-dataset-type.md).
+
+#### The `graph` type: random sponges with node connections
+
+Each simulation is a unit cube from which 1 to 6 random spherical holes (radius `r`, same for all holes of a simulation) are removed, so **every simulation has its own mesh** (about 300 to 1600 nodes with `res` between 5 and 10). Heat enters through one random face among the six; convection acts on every boundary, hole walls included. The sample also records which nodes are connected: two nodes are linked when they belong to the same tetrahedron (both directions).
+
+```bash
+uv run --extra sim me-project-speit generate -n 200 --kind graph --seed 1   # about 2 minutes, 18 MB
+uv run me-project-speit train --dataset dataset_<...>_200 --model gnn --hidden 64 --batch-size 8 --device cuda
+```
+
+A graph dataset is made of three files with the same stem:
+
+| File | Content |
+|------|---------|
+| `name.csv` | one row per node of every simulation: `sim, T0, P0, h, r, res, x, y, z, heated, T` (`heated` = 1 on the heated face; rows of a simulation are contiguous) |
+| `name_edges.npz` | the connections: arrays `sim`, `src`, `dst` (node indices *local to the simulation*, each connection in both directions) |
+| `name.json` | the description (`kind: "graph"`, `rows_per_sample: null` because the size varies) |
+
+The `gnn` model (`models/gnn.py`, pure PyTorch) encodes the inputs of each node, then repeats *message passing*: each node averages a message computed from each neighbour and updates itself. On 200 simulations it reaches a test MAE of about 0.13 °C, against 0.5 °C for predicting the mean temperature. `batch-size` counts simulations, not nodes. `show` cannot plot graph datasets yet, and `Predictor.predict(x, edge_index)` needs the connections.
 
 > **Extending the project?** Step-by-step guides are in [`docs/`](docs/README.md): [add a dataset](docs/tutorials/01-add-a-dataset.md), [add a simulation parameter](docs/tutorials/02-add-a-simulation-parameter.md), [add a model](docs/tutorials/03-add-a-model.md), [add a dataset type](docs/tutorials/04-add-a-dataset-type.md), [checklist and troubleshooting](docs/tutorials/05-checklist-and-troubleshooting.md).
 

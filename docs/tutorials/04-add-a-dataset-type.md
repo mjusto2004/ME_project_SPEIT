@@ -21,6 +21,8 @@ Implement three methods; everything else is inherited.
 | `simulation_rows(cls, spec, params)` | the CSV rows produced by **one** simulation (shape `(rows_per_sample, n_columns)`; inputs first, then outputs) |
 | `fields(self)` | the outputs as `(n_simulations, n_nodes)`, used by `show` |
 
+> Samples that are not independent rows (like the graphs of `datasets/graph.py`, which have a different size each) need more: override `generate`, `from_csv`, `save`, `split` and `make_loader` (how a training batch is built). `graph.py` is a complete, commented example.
+
 Inherited for free: `generate(n, ...)`, `save(path)`, `load` (dispatched on the `kind` in the JSON), `split(seed)` per simulation, `len()` (number of simulations), validation of column and row counts, and the compatibility checks with models.
 
 ## Worked example: `snapshots`
@@ -79,7 +81,7 @@ class SnapshotsDataset(Dataset):
 
     @classmethod
     def build_spec(cls, input_names=("T0", "P0", "h"), name="cube"):
-        names = cls.check_params(input_names)        # validates against config.PARAM_RANGES
+        names = cls.check_params(input_names)        # validates against cls.param_ranges (config.PARAM_RANGES by default)
         return DatasetSpec(
             name=name,
             input_names=names + ["t"],               # the time is an input
@@ -160,6 +162,8 @@ uv run me-project-speit train --dataset dataset_... --model mlp
 4. Test, and add a row to the *Dataset types* table of the README.
 
 ## Pitfalls
+
+- **`simulation_rows` runs in worker processes** (`generate --workers N`). It must only depend on its arguments (`spec`, `params`): no global variable filled in the main process, and the class must be defined at the top level of an importable module of the package (a class defined inside a test file or a notebook cannot be sent to the workers: use `workers=1` there). Draw random numbers in `generate`, never inside `simulation_rows`, so the dataset does not depend on the number of workers (the `graph` type shows how: one seed per simulation).
 
 - **Same format, different data** (e.g. a second `field` dataset on a finer mesh): do not add a type, give the data a different `mesh_id` and make mesh-specific models check it.
 - **Non-contiguous rows, or a varying number of rows per simulation**, break the per-simulation split. Keep `rows_per_sample` constant.
