@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from .dataset import DatasetSpec
+from .datasets import DatasetSpec
 from .models import build_model
 
 

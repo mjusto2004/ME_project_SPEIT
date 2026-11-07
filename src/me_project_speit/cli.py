@@ -6,6 +6,7 @@ import argparse
 from pathlib import Path
 
 from . import __version__
+from .datasets import available_kinds
 
 DEFAULT_DATA_DIR = Path("data")
 
@@ -27,6 +28,16 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="+",
         default=["T0", "P0", "h"],
         help="simulation parameters to vary (inputs of the dataset); others keep defaults",
+    )
+
+    gen.add_argument(
+        "--kind",
+        "--layout",
+        dest="kind",
+        choices=available_kinds(),
+        default="field",
+        help="dataset kind. field: one row per simulation (params -> whole field); "
+        "pointwise: one row per node (params, x, y, z -> temperature)",
     )
 
     tr = sub.add_parser("train", help="train a model on a dataset")
@@ -55,7 +66,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _list(what: str, data_dir: Path) -> None:
-    from .dataset import list_datasets
+    from .datasets import list_datasets
     from .models import available_models, compatible_models
 
     if what == "models":
@@ -79,11 +90,11 @@ def main(argv: list[str] | None = None) -> None:
 
     # Heavy imports are deferred so each command only needs its own dependencies.
     if args.command == "generate":
-        from .dataset import save_dataset
+        from .datasets import save_dataset
 
         try:
             save_dataset(
-                args.n_samples, folder=args.output_dir, seed=args.seed, input_names=args.params
+                args.n_samples, folder=args.output_dir, seed=args.seed, input_names=args.params, kind=args.kind
             )
         except ValueError as exc:
             parser.error(str(exc))
@@ -111,7 +122,7 @@ def main(argv: list[str] | None = None) -> None:
             parser.exit(2, f"error: {exc}\n")
 
     elif args.command == "show":
-        from .dataset import resolve_dataset
+        from .datasets import resolve_dataset
         from .visualization import plot_fields
 
         plot_fields(resolve_dataset(args.dataset, args.data_dir), ids=args.ids)

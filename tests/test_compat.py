@@ -6,15 +6,15 @@ import numpy as np
 import pytest
 
 from me_project_speit import config
-from me_project_speit.dataset import (
-    LEGACY_SPEC,
+from me_project_speit.datasets import (
     DatasetSpec,
+    FieldDataset,
     list_datasets,
     load_spec,
-    make_spec,
     resolve_dataset,
     save_spec,
 )
+from me_project_speit.datasets.field import legacy_spec
 from me_project_speit.models import (
     IncompatibleError,
     SurrogateModel,
@@ -23,7 +23,14 @@ from me_project_speit.models import (
     compatible_models,
     register_model,
 )
+
 from me_project_speit.training import TrainConfig, train
+
+LEGACY_SPEC = legacy_spec()
+
+
+def make_spec(names, name="d"):
+    return FieldDataset.build_spec(names, name=name)
 
 
 @register_model("fixed_mesh_test")

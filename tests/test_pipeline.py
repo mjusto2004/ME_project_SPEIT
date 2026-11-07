@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 import torch
 
-from me_project_speit.dataset import DatasetSpec, load_dataset, save_spec, split_indices
+from me_project_speit.datasets import DatasetSpec, load_dataset, save_spec, split_indices
 from me_project_speit.inference import Predictor
 from me_project_speit.models import build_model
 from me_project_speit.training import TrainConfig, train

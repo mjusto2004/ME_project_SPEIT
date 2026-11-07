@@ -13,7 +13,7 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
-from .dataset import DEFAULT_DATA_DIR, load_dataset, load_spec, resolve_dataset, split_indices
+from .datasets import DEFAULT_DATA_DIR, load_dataset, load_spec, resolve_dataset
 from .models import build_model, check_compatible
 
 
@@ -107,11 +107,11 @@ def train(cfg: TrainConfig) -> dict:
     data = load_dataset(cfg.dataset)
     spec = data.spec
     X, Y = data.X, data.Y
-    n = len(X)
+    n = len(data)  # number of simulations
     if n < 50:
         print("Warning: dataset is too small for reliable evaluation.")
 
-    split = split_indices(n, cfg.seed)
+    split = data.split(cfg.seed)
     train_idx, val_idx, test_idx = split.train, split.val, split.test
 
     # Normalisation statistics come from the training set only.
@@ -153,10 +153,11 @@ def train(cfg: TrainConfig) -> dict:
 
     print(f"Model: {cfg.model} {cfg.model_kwargs or ''}")
     print(f"Dataset: {cfg.dataset} ({spec.describe()})")
-    print(f"Samples: {n}")
-    print(f"Train: {len(train_idx)}")
-    print(f"Validation: {len(val_idx)}")
-    print(f"Test: {len(test_idx)}")
+    rps = spec.rows_per_sample
+    print(f"Simulations: {n} ({len(X)} rows)")
+    print(f"Train: {len(train_idx) // rps}")
+    print(f"Validation: {len(val_idx) // rps}")
+    print(f"Test: {len(test_idx) // rps}")
 
     # --- Training loop ------------------------------------------------------
     best_val_mse = float("inf")

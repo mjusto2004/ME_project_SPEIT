@@ -7,7 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .dataset import load_dataset
+from .datasets import load_dataset
 from .simulation import build_mesh
 
 DEFAULT_COORD = Path("data") / "coord.npy"
@@ -28,10 +28,10 @@ def plot_fields(
     from . import config
 
     data = load_dataset(dataset)
-    Y = data.Y
+    Y = data.fields()  # (n_simulations, n_nodes) whatever the kind
     mesh, _ = build_mesh()
 
-    if data.spec.output_kind != "nodal_temperature" or data.spec.n_outputs != mesh.Nn:
+    if data.spec.output_kind != "nodal_temperature" or Y.shape[1] != mesh.Nn:
         raise ValueError(
             f"Dataset '{data.spec.name}' ({data.spec.describe()}) cannot be plotted "
             f"on the built-in mesh ({mesh.Nn} nodes, nodal temperature)."

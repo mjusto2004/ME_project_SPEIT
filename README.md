@@ -25,12 +25,13 @@ Once trained, the network replaces a ~0.5 s simulation with a single forward pas
 ├── src/me_project_speit/
 │   ├── config.py             physical constants and shared dimensions
 │   ├── simulation.py         finite-element simulation (needs EasyFEA)
-│   ├── dataset.py            DatasetSpec, generation, loading, discovery, split
+│   ├── datasets/             abstract Dataset + one subclass per dataset type (field.py, pointwise.py)
 │   ├── models/               model registry + compatibility (base.py, registry.py, mlp.py)
 │   ├── training.py           training loop, early stopping, evaluation
 │   ├── inference.py          Predictor: load a checkpoint and predict
 │   ├── visualization.py      3D plots of stored fields (needs EasyFEA)
 │   └── cli.py                `me-project-speit` command-line interface
+├── docs/                     developer tutorials (add a model, dataset, dataset type...)
 └── tests/                    pytest suite
 ```
 
@@ -48,6 +49,8 @@ or with pip:
 pip install -e ".[sim,dev]"
 ```
 
+**GPU:** `pyproject.toml` installs the CUDA 13.2 build of PyTorch (from `download.pytorch.org/whl/cu132`) on Windows, needed for the RTX 5070 development PC; PyPI only ships a CPU build for Windows. Linux machines (e.g. the Slurm cluster) are unaffected and get PyPI's default build. If you are on another Windows machine with a different GPU or an older driver, edit the `[tool.uv.sources]` / `[[tool.uv.index]]` section (e.g. `cu128`). Check with `uv run python -c "import torch; print(torch.cuda.is_available())"`.
+
 Extras:
 
 - *(none)* – `numpy` and `torch`: enough to **train** on an existing dataset.
@@ -63,6 +66,7 @@ The package installs a `me-project-speit` command (also available as `python -m 
 ```bash
 me-project-speit generate -n 90 --output-dir data --seed 0
 me-project-speit generate -n 90 --params T0 h      # vary only T0 and h (P0 keeps its default)
+me-project-speit generate -n 90 --kind pointwise   # one row per node, coordinates as inputs
 ```
 
 Runs `n` simulations with random inputs (`--params`, default `T0 P0 h`; ranges and defaults in `config.py`) and writes `data/dataset_<timestamp>_<n>.csv` **and** `data/dataset_<timestamp>_<n>.json`. Each CSV row holds the inputs followed by the 560 nodal temperatures in °C.
@@ -125,7 +129,7 @@ field = predictor.predict([250.0, 25_000.0, 200.0])  # (1, 560) in °C
 
 Different datasets can have different inputs and outputs, and a model only makes sense for some of them. To catch mismatches early, **every dataset describes itself** and **every model declares what it accepts**:
 
-- Each `foo.csv` has a `foo.json` next to it (a `DatasetSpec`): `input_names`, `n_outputs`, `output_kind`, `mesh_id`, `input_ranges`. `generate` writes it automatically. A CSV without a JSON is only accepted if it has the legacy 563-column layout (`T0, P0, h` → 560 nodes); otherwise loading fails with a message asking for the JSON.
+- Each `foo.csv` has a `foo.json` next to it (a `DatasetSpec`): `input_names`, `n_outputs`, `output_kind`, `mesh_id`, `input_ranges`. `generate` writes it automatically. A CSV without a JSON is only accepted if it has the legacy 563-column format (`T0, P0, h` → 560 nodes); otherwise loading fails with a message asking for the JSON.
 - Models are built *from* the dataset spec (`n_inputs`, `n_outputs`), so the `mlp` adapts to any shape.
 - Before training starts, `train` checks the pair. An incompatible pair fails immediately and suggests alternatives, e.g.:
 
@@ -136,13 +140,28 @@ Different datasets can have different inputs and outputs, and a model only makes
 - Checkpoints store the model name, its arguments and the dataset spec, so `Predictor` rebuilds the right model and rejects inputs of the wrong size.
 - Outputs defined on different meshes must use different `mesh_id`s; two datasets with the same column count but a different `mesh_id` are therefore not interchangeable for mesh-specific models.
 
+### Dataset types
+
+Each dataset type is a subclass of the abstract `Dataset` (`src/me_project_speit/datasets/`). The type is stored as `"kind"` in the JSON, says what a row of the CSV means, and decides which models can learn from it (`list datasets` shows it in brackets):
+
+| Type (`kind`) | Class | Row | Inputs → output | Models |
+|---------------|-------|-----|-----------------|--------|
+| `field` (default) | `FieldDataset` | one per simulation | `T0, P0, h` → all 560 node temperatures | `mlp` |
+| `pointwise` | `PointwiseDataset` | one per (simulation, node) | `T0, P0, h, x, y, z` → temperature at that node | `coord_mlp` |
+
+A `pointwise` dataset has `n_simulations × 560` rows, with the rows of one simulation contiguous (`rows_per_sample` in the JSON). Train/validation/test are split **per simulation**, never per row, so the nodes of a test simulation never leak into training. Each model lists the dataset classes it accepts (`supported_datasets`); training `mlp` on a pointwise dataset (or `coord_mlp` on a field one) stops immediately with an error listing the models that do fit.
+
+A new type is a subclass implementing three methods (`build_spec`, `simulation_rows`, `fields`); loading, saving, generation and splitting are inherited. See [tutorial 4](docs/tutorials/04-add-a-dataset-type.md).
+
+> **Extending the project?** Step-by-step guides are in [`docs/`](docs/README.md): [add a dataset](docs/tutorials/01-add-a-dataset.md), [add a simulation parameter](docs/tutorials/02-add-a-simulation-parameter.md), [add a model](docs/tutorials/03-add-a-model.md), [add a dataset type](docs/tutorials/04-add-a-dataset-type.md), [checklist and troubleshooting](docs/tutorials/05-checklist-and-troubleshooting.md).
+
 ### Adding a dataset
 
-Drop `my_data.csv` (rows: inputs then outputs) and `my_data.json` in `data/`. Minimal JSON:
+Drop `my_data.csv` (rows: inputs then outputs) and `my_data.json` in `data/`. Minimal JSON (`kind` defaults to `field`):
 
 ```json
 {"name": "my_data", "input_names": ["a", "b"], "n_outputs": 1200,
- "output_kind": "nodal_temperature", "mesh_id": "my_mesh"}
+ "output_kind": "nodal_temperature", "mesh_id": "my_mesh", "kind": "field"}
 ```
 
 Then `me-project-speit list datasets` shows it with its compatible models, and `train --dataset my_data` uses it. To make `generate` sample a new simulation parameter, add it to `PARAM_DEFAULTS` / `PARAM_RANGES` in `config.py` and use it in `simulation.py`.
@@ -152,17 +171,21 @@ Then `me-project-speit list datasets` shows it with its compatible models, and `
 Create `src/me_project_speit/models/my_model.py`:
 
 ```python
+from ..datasets import FieldDataset
 from .base import IncompatibleError, SurrogateModel
 from .registry import register_model
 
 @register_model("my_model")
 class MyModel(SurrogateModel):
+    supported_datasets = (FieldDataset,)       # dataset types it can learn from
+
     def __init__(self, n_inputs, n_outputs, width=64):
         super().__init__()
         ...
 
     @classmethod
     def check_compatible(cls, spec):          # optional: only if shape-specific
+        super().check_compatible(spec)         # dataset-type check
         if spec.mesh_id != "cube_560":
             raise IncompatibleError("needs mesh 'cube_560'")
 ```

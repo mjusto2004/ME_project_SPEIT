@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from .base import IncompatibleError, SurrogateModel
 
 if TYPE_CHECKING:
-    from ..dataset import DatasetSpec
+    from ..datasets import DatasetSpec
 
 _REGISTRY: dict[str, type[SurrogateModel]] = {}
 
