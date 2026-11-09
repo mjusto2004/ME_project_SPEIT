@@ -16,7 +16,7 @@ dependencies = [
 # Finite-element simulation, dataset generation and 3D plots
 sim = ["EasyFEA"]
 # Plots of training runs
-plot = ["matplotlib"]
+plot = ["matplotlib", "pyvista"]
 dev = ["pytest"]
 
 [project.scripts]

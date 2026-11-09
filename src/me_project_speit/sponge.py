@@ -15,6 +15,10 @@ import numpy as np
 
 from . import config
 
+STABILITY_SAFETY = 0.2  # fraction of the explicit-convection stability limit used for dt
+MAX_STEPS = 400  # cap on the number of time steps
+T_VALID = (-273.15, 2000.0)  # deg C; a simulation outside this range has diverged
+
 # Face index -> (axis, coordinate): 0: x=0, 1: x=1, 2: y=0, 3: y=1, 4: z=0, 5: z=1
 FACES = [(0, 0.0), (0, 1.0), (1, 0.0), (1, 1.0), (2, 0.0), (2, 1.0)]
 
@@ -85,7 +89,7 @@ def run_sponge_simulation(
 
     Returns
     -------
-    None if the geometry is invalid, otherwise a tuple
+    None if the geometry is invalid or the simulation diverged, otherwise a tuple
     ``(temperature, coord, connect, heated)``:
 
     - ``temperature``: (n_nodes,) in deg C after ``config.T_MAX``;
@@ -116,13 +120,20 @@ def run_sponge_simulation(
     simu = Simulations.Thermal(mesh, model)
     simu.rho = config.RHO
 
-    dt = config.T_MAX / config.N_STEPS
+    # Convection is applied explicitly (EasyFEA has no Robin term), which is only
+    # stable if h*dt < rho*c*(element size). Use more, shorter steps when the mesh
+    # is fine or h is large. A low percentile of the edge lengths is used rather
+    # than the minimum (gmsh makes a few micro-edges where holes meet), and the
+    # number of steps is capped; a draw that still diverges is discarded below.
+    edges = np.vstack([connect[:, [i, j]] for i in range(4) for j in range(i + 1, 4)])
+    h_min = np.percentile(np.linalg.norm(coord[edges[:, 0]] - coord[edges[:, 1]], axis=1), 5)
+    dt_stable = STABILITY_SAFETY * config.RHO * config.CP * h_min / h
+    n_steps = min(MAX_STEPS, max(config.N_STEPS, int(np.ceil(config.T_MAX / dt_stable))))
+    dt = config.T_MAX / n_steps
     simu.Solver_Set_Parabolic_Algorithm(alpha=0.5, dt=dt)
     simu._Set_solutions(simu.problemType, np.ones(mesh.Nn) * T0)
 
-    t = -dt
-    while t < config.T_MAX:
-        t += dt
+    for _ in range(n_steps):
         temperature = simu.thermal
         # One combined load per boundary node: convection, plus the flux on the heated face.
         load = h * (config.T_EXTERIOR - temperature[boundary]) + flux * is_heated_boundary
@@ -131,4 +142,8 @@ def run_sponge_simulation(
         simu.Solve()
         simu.Save_Iter()
 
-    return simu.thermal - 273.15, coord, connect, heated
+    temperature = simu.thermal - 273.15
+    if not np.isfinite(temperature).all() or not (T_VALID[0] < temperature.min() and temperature.max() < T_VALID[1]):
+        return None  # the time integration diverged: discard this draw
+
+    return temperature, coord, connect, heated
