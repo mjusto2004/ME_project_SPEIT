@@ -24,7 +24,7 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-from .. import config
+from ..simulations import config
 from ..parallel import parallel_map
 
 DEFAULT_DATA_DIR = Path("data")
@@ -255,7 +255,10 @@ class Dataset(ABC):
 
         Returns an array of shape ``(spec.rows_per_sample, spec.n_columns)``:
         inputs first, then outputs. Call
-        :func:`~me_project_speit.simulation.run_simulation` here.
+        :meth:`~me_project_speit.simulations.CubeSimulation.run` here (the
+        ``graph`` kind does not use this hook: it runs
+        :meth:`~me_project_speit.simulations.SpongeSimulation.run` in its own
+        ``generate``).
         """
 
     @abstractmethod

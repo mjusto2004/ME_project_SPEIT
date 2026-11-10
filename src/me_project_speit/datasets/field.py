@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .. import config
+from ..simulations import config
 from .base import Dataset, DatasetSpec, register_dataset
 
 
@@ -31,9 +31,9 @@ class FieldDataset(Dataset):
 
     @classmethod
     def simulation_rows(cls, spec: DatasetSpec, params: dict[str, float]) -> np.ndarray:
-        from ..simulation import run_simulation
+        from ..simulations import CubeSimulation
 
-        field_ = run_simulation(**params)
+        field_ = CubeSimulation.run(**params)
         values = [params[k] for k in spec.input_names]
         return np.concatenate((values, field_))[None, :]
 

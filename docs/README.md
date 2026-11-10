@@ -5,7 +5,7 @@ Step-by-step guides for extending the project. Start with the mental model, then
 ## Mental model (2 minutes)
 
 ```
- simulation.py ──► datasets/ ──► training.py ──► checkpoint (best_model.pt)
+ simulations/ ──► datasets/ ──► training.py ──► checkpoint (best_model.pt)
  (EasyFEA)         DatasetSpec     build_model()        │
                    CSV + JSON      check_compatible()   ▼
                                                     inference.py
@@ -31,11 +31,12 @@ Three ideas keep datasets and models interchangeable:
 
 | File (`src/me_project_speit/`) | Role |
 |------|------|
-| `config.py` | physical constants, `PARAM_DEFAULTS`, `PARAM_RANGES`, `N_NODES`, `MESH_ID` |
-| `simulation.py` | `build_mesh()`, `run_simulation(**params)` (needs EasyFEA) |
+| `simulations/config.py` | physical constants, `PARAM_DEFAULTS`, `PARAM_RANGES`, `N_NODES`, `MESH_ID`, sponge parameters |
+| `simulations/base.py` | abstract `Simulation`: parameter check and the EasyFEA steps shared by the two simulations |
+| `simulations/cube.py` | `CubeSimulation` (kinds `field`, `pointwise`): `build_mesh()`, `run(**params)` (needs EasyFEA) |
 | `datasets/base.py` | abstract `Dataset`, `DatasetSpec`, `@register_dataset`, `load_dataset`, `save_dataset`, `split_indices` |
 | `datasets/field.py`, `pointwise.py`, `graph.py` | the dataset types: `FieldDataset`, `PointwiseDataset`, `GraphDataset` (variable meshes + connections; the advanced example) |
-| `sponge.py` | simulation of a cube with random spherical holes, used by `GraphDataset` |
+| `simulations/sponge.py` | `SpongeSimulation` (kind `graph`): cube with random spherical holes, `run(centers, face, **params)` |
 | `models/base.py` | `SurrogateModel`, `IncompatibleError` |
 | `models/registry.py` | `@register_model`, `build_model`, `check_compatible`, `compatible_models` |
 | `models/mlp.py` | `MLP` (field) and `CoordMLP` (pointwise) |

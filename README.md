@@ -23,9 +23,10 @@ Once trained, the network replaces a ~0.5 s simulation with a single forward pas
 │   └── coord.npy             node coordinates of the reference mesh
 ├── resources/                exploratory notebooks, original scripts, Slurm job
 ├── src/me_project_speit/
-│   ├── config.py             physical constants and shared dimensions
-│   ├── simulation.py         finite-element simulation of the cube with a cylindrical source (needs EasyFEA)
-│   ├── sponge.py             simulation of a cube with random spherical holes (needs EasyFEA)
+│   ├── simulations/          the finite-element simulations (need EasyFEA)
+│   │   ├── config.py         physical constants, parameters and shared dimensions
+│   │   ├── cube.py           CubeSimulation: cube with a cylindrical source (kinds field, pointwise)
+│   │   └── sponge.py         SpongeSimulation: cube with random spherical holes (kind graph)
 │   ├── datasets/             abstract Dataset + one subclass per dataset type (field.py, pointwise.py, graph.py)
 │   ├── models/               model registry + compatibility (base.py, registry.py, mlp.py, gnn.py)
 │   ├── training.py           training loop, early stopping, evaluation
@@ -71,7 +72,7 @@ me-project-speit generate -n 90 --params T0 h      # vary only T0 and h (P0 keep
 me-project-speit generate -n 90 --kind pointwise   # one row per node, coordinates as inputs
 ```
 
-Runs `n` simulations, **in parallel** (`--workers N`, default: the number of cores up to 8; `--workers 1` runs in the current process). The dataset is the same whatever the number of workers, so a given `--seed` always gives the same file. Typical gain for 40 simulations on 8 workers: 3.8x for `graph`, 2.8x for `pointwise` (start-up of the worker processes costs a few seconds, so the gain grows with `n`). Each simulation uses random inputs (`--params`, default `T0 P0 h`; ranges and defaults in `config.py`) and writes `data/dataset_<timestamp>_<n>.csv` **and** `data/dataset_<timestamp>_<n>.json`. Each CSV row holds the inputs followed by the 560 nodal temperatures in °C.
+Runs `n` simulations, **in parallel** (`--workers N`, default: the number of cores up to 8; `--workers 1` runs in the current process). The dataset is the same whatever the number of workers, so a given `--seed` always gives the same file. Typical gain for 40 simulations on 8 workers: 3.8x for `graph`, 2.8x for `pointwise` (start-up of the worker processes costs a few seconds, so the gain grows with `n`). Each simulation uses random inputs (`--params`, default `T0 P0 h`; ranges and defaults in `simulations/config.py`) and writes `data/dataset_<timestamp>_<n>.csv` **and** `data/dataset_<timestamp>_<n>.json`. Each CSV row holds the inputs followed by the 560 nodal temperatures in °C.
 
 ### 2. Train
 
@@ -197,7 +198,7 @@ Drop `my_data.csv` (rows: inputs then outputs) and `my_data.json` in `data/`. Mi
  "output_kind": "nodal_temperature", "mesh_id": "my_mesh", "kind": "field"}
 ```
 
-Then `me-project-speit list datasets` shows it with its compatible models, and `train --dataset my_data` uses it. To make `generate` sample a new simulation parameter, add it to `PARAM_DEFAULTS` / `PARAM_RANGES` in `config.py` and use it in `simulation.py`.
+Then `me-project-speit list datasets` shows it with its compatible models, and `train --dataset my_data` uses it. To make `generate` sample a new simulation parameter, add it to `PARAM_DEFAULTS` / `PARAM_RANGES` in `simulations/config.py` and use it in `simulations/cube.py`.
 
 ### Adding a model
 
@@ -240,4 +241,4 @@ The tests cover dataset specs, the model registry and compatibility checks, and 
 ## Notes
 
 - **Mesh node ordering depends on the gmsh version.** `data/coord.npy` stores the node order of the mesh used to create `data/data_test.csv`. With a different gmsh version the mesh has the same nodes in another order, so `show` will refuse to plot that file (it raises an error rather than showing a scrambled field). Datasets you generate yourself are always consistent with your own installation.
-- All geometry, material and sampling parameters are in `src/me_project_speit/config.py`. If you change the mesh resolution, update `N_NODES` and `MESH_ID` and regenerate the datasets.
+- All geometry, material and sampling parameters are in `src/me_project_speit/simulations/config.py`. If you change the mesh resolution, update `N_NODES` and `MESH_ID` and regenerate the datasets.

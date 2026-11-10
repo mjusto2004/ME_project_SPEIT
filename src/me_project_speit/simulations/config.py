@@ -1,7 +1,15 @@
-"""Physical constants and shared dimensions of the project.
+"""Constants of the simulations: geometry, material, time, parameters, mesh.
 
-Everything that must stay consistent between the simulator, the dataset
-files and the neural network lives here.
+Everything that must stay consistent between the simulators, the dataset files
+and the neural network lives here.
+
+There are two simulations, each with its own parameters:
+
+- ``PARAM_DEFAULTS`` / ``PARAM_RANGES``: :class:`~.cube.CubeSimulation` (kinds
+  ``field`` and ``pointwise``);
+- ``SPONGE_PARAM_DEFAULTS`` / ``SPONGE_PARAM_RANGES``:
+  :class:`~.sponge.SpongeSimulation` (kind ``graph``), the same plus the hole
+  radius ``r`` and the mesh resolution ``res``.
 """
 
 # --- Geometry (unit cube with a cylindrical heat source along z) -------------
@@ -48,3 +56,12 @@ SPONGE_PARAM_RANGES = {
 SPONGE_PARAM_DEFAULTS = {**PARAM_DEFAULTS, "r": 0.15, "res": 8}
 INTEGER_PARAMS = {"res"}
 MAX_HOLES = 20  # the number of holes is drawn in 1..MAX_HOLES
+
+# Face index -> (axis, coordinate): 0: x=0, 1: x=1, 2: y=0, 3: y=1, 4: z=0, 5: z=1
+# (the face through which a sponge is heated).
+FACES = [(0, 0.0), (0, 1.0), (1, 0.0), (1, 1.0), (2, 0.0), (2, 1.0)]
+
+# Time stepping of the sponge (explicit convection, see SpongeSimulation.run).
+STABILITY_SAFETY = 0.2  # fraction of the explicit-convection stability limit used for dt
+MAX_STEPS = 400  # cap on the number of time steps
+T_VALID = (-273.15, 2000.0)  # deg C; a simulation outside this range has diverged

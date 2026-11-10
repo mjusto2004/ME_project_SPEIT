@@ -5,7 +5,7 @@ import json
 import numpy as np
 import pytest
 
-from me_project_speit import config
+from me_project_speit.simulations import config
 from me_project_speit.datasets import (
     DatasetSpec,
     FieldDataset,

@@ -8,8 +8,8 @@
 - [ ] a short `train --epochs 3` runs
 
 **New simulation parameter**
-- [ ] added to `PARAM_DEFAULTS` **and** `PARAM_RANGES` (`config.py`)
-- [ ] used in `run_simulation`
+- [ ] added to `PARAM_DEFAULTS` **and** `PARAM_RANGES` (`simulations/config.py`)
+- [ ] used in `CubeSimulation.run`
 - [ ] does not change the mesh (or gets a new `mesh_id`)
 
 **New model**
@@ -38,7 +38,7 @@
 | `expected N columns (k inputs + m outputs), got M` | JSON and CSV disagree | fix `input_names` / `n_outputs` |
 | `Missing edges file 'x_edges.npz' next to x.csv` | a graph dataset copied without its connections | copy the `_edges.npz` file with the CSV and the JSON |
 | `an edge points to a node outside its simulation` / `the 'sim' column must be 0, 1, 2...` | corrupted or hand-edited graph files | regenerate the dataset |
-| `no valid sponge after 20 draws` | the random holes keep cutting the cube in pieces (radius range too large for the number of holes) | reduce `r` in `SPONGE_PARAM_RANGES` or `MAX_HOLES` in `config.py` |
+| `no valid sponge after 20 draws` | the random holes keep cutting the cube in pieces (radius range too large for the number of holes) | reduce `r` in `SPONGE_PARAM_RANGES` or `MAX_HOLES` in `simulations/config.py` |
 | `rows is not a multiple of rows_per_sample` | wrong `rows_per_sample`, or truncated CSV | fix the JSON or regenerate |
 | `Unknown dataset kind 'x'. Available: [...]` | `kind` in the JSON is not registered (typo, or the module is not imported in `datasets/__init__.py`) | fix the JSON or register it ([tutorial 4](04-add-a-dataset-type.md)) |
 | `Unknown input parameter(s) [...] for kind 'x'` / `Unknown simulation parameter(s)` | name not in the parameters of that kind (`PARAM_RANGES`, or `SPONGE_PARAM_RANGES` for `graph`) | add it ([tutorial 2](02-add-a-simulation-parameter.md)) |

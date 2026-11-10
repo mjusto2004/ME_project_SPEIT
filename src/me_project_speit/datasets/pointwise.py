@@ -6,7 +6,7 @@ from functools import lru_cache
 
 import numpy as np
 
-from .. import config
+from ..simulations import config
 from .base import Dataset, DatasetSpec, register_dataset
 
 COORD_NAMES = ["x", "y", "z"]
@@ -15,9 +15,9 @@ COORD_NAMES = ["x", "y", "z"]
 @lru_cache(maxsize=1)
 def _node_coordinates() -> np.ndarray:
     """Node coordinates of the reference mesh, shape ``(n_nodes, 3)``."""
-    from ..simulation import build_mesh
+    from ..simulations import CubeSimulation
 
-    return np.asarray(build_mesh()[0].coord)
+    return np.asarray(CubeSimulation.build_mesh()[0].coord)
 
 
 @register_dataset("pointwise")
@@ -43,9 +43,9 @@ class PointwiseDataset(Dataset):
 
     @classmethod
     def simulation_rows(cls, spec: DatasetSpec, params: dict[str, float]) -> np.ndarray:
-        from ..simulation import run_simulation
+        from ..simulations import CubeSimulation
 
-        field_ = run_simulation(**params)
+        field_ = CubeSimulation.run(**params)
         coords = _node_coordinates()
         values = np.array([params[k] for k in spec.input_ranges])
         return np.hstack([np.tile(values, (len(coords), 1)), coords, field_[:, None]])

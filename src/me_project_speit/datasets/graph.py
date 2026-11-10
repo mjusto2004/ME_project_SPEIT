@@ -24,7 +24,7 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
-from .. import config
+from ..simulations import config
 from ..parallel import parallel_map
 from .base import Dataset, DatasetSpec, Split, register_dataset, save_spec, split_indices
 
@@ -148,7 +148,7 @@ class GraphDataset(Dataset):
         Returns the node rows ``[inputs..., output]`` and the edges ``[src, dst]``
         (without the simulation number, added by :meth:`generate`).
         """
-        from ..sponge import run_sponge_simulation
+        from ..simulations import SpongeSimulation
 
         rng = np.random.default_rng(seed)
         for _ in range(MAX_TRIES):
@@ -156,8 +156,8 @@ class GraphDataset(Dataset):
             for k in config.INTEGER_PARAMS & set(params):
                 params[k] = int(round(params[k]))
             holes = rng.uniform(size=(int(rng.integers(1, config.MAX_HOLES + 1)), 3))
-            face = int(rng.integers(0, 6))
-            result = run_sponge_simulation(
+            face = int(rng.integers(0, len(config.FACES)))
+            result = SpongeSimulation.run(
                 holes, face, **{**config.SPONGE_PARAM_DEFAULTS, **params}
             )
             if result is not None:

@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 
 from .datasets import load_dataset
-from .simulation import build_mesh
+from .simulations import CubeSimulation, config
 
 DEFAULT_COORD = Path("data") / "coord.npy"
 
@@ -25,11 +25,9 @@ def plot_fields(
     """
     from EasyFEA import Models, PyVista, Simulations
 
-    from . import config
-
     data = load_dataset(dataset)
     Y = data.fields()  # (n_simulations, n_nodes) whatever the kind
-    mesh, _ = build_mesh()
+    mesh, _ = CubeSimulation.build_mesh()
 
     if data.spec.output_kind != "nodal_temperature" or Y.shape[1] != mesh.Nn:
         raise ValueError(

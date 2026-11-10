@@ -46,7 +46,8 @@ def build_parser() -> argparse.ArgumentParser:
         choices=available_kinds(),
         default="field",
         help="dataset kind. field: one row per simulation (params -> whole field); "
-        "pointwise: one row per node (params, x, y, z -> temperature)",
+        "pointwise: one row per node (params, x, y, z -> temperature); "
+        "graph: random sponge meshes with their connections (variable node count)",
     )
 
     tr = sub.add_parser("train", help="train a model on a dataset")

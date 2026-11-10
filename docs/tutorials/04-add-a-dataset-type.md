@@ -35,16 +35,17 @@ We want the temperature field at several times: one row per (simulation, time st
 
 The simulator only returned the final state. Add an opt-in flag so existing callers are unaffected.
 
-`config.py`:
+`simulations/config.py`:
 
 ```python
 N_SNAPSHOTS = 10   # time steps saved per simulation
 ```
 
-`simulation.py`:
+`simulations/cube.py`, in `CubeSimulation`:
 
 ```python
-def run_simulation(verbose: bool = False, snapshots: bool = False, **params: float):
+@classmethod
+def run(cls, verbose: bool = False, snapshots: bool = False, **params: float):
     ...
     every = config.N_STEPS // config.N_SNAPSHOTS
     history, times, step = [], [], 0
@@ -62,7 +63,7 @@ def run_simulation(verbose: bool = False, snapshots: bool = False, **params: flo
     return simu.thermal - 273.15
 ```
 
-(If your type only reshapes data that `run_simulation` already returns, skip this step, as `PointwiseDataset` does.)
+(If your type only reshapes data that `CubeSimulation.run` already returns, skip this step, as `PointwiseDataset` does.)
 
 ### Step 2 — write the class (`datasets/snapshots.py`)
 
@@ -71,7 +72,7 @@ def run_simulation(verbose: bool = False, snapshots: bool = False, **params: flo
 
 import numpy as np
 
-from .. import config
+from ..simulations import config
 from .base import Dataset, DatasetSpec, register_dataset
 
 
@@ -94,9 +95,9 @@ class SnapshotsDataset(Dataset):
 
     @classmethod
     def simulation_rows(cls, spec, params):
-        from ..simulation import run_simulation
+        from ..simulations import CubeSimulation
 
-        times, history = run_simulation(snapshots=True, **params)   # (S,), (S, n_nodes)
+        times, history = CubeSimulation.run(snapshots=True, **params)   # (S,), (S, n_nodes)
         values = np.array([params[k] for k in spec.input_ranges])
         return np.hstack([np.tile(values, (len(times), 1)), times[:, None], history])
 
