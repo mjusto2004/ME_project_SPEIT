@@ -1,2 +1,5 @@
 Slurm_files/
 runs/
+
+# Raw simulation runs (one .npz per run)
+datasets/raw/
