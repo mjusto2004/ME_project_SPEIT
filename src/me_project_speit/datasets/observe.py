@@ -1,3 +1,5 @@
+#ce code permet d'afficher le dataset qui est sous format CSV
+
 import numpy as np
 from pathlib import Path
 from EasyFEA import Models, ElemType, Simulations, PyVista
@@ -17,7 +19,7 @@ assert np.allclose(mesh.coord, coord), "le maillage ne correspond pas à coord.n
 
 simu = Simulations.Thermal(mesh, Models.Thermal(k=237, c=896, thickness=1))
 
-ids = [0,1]
+ids = [4,16,25] #tu choisis les échantillons que tu veux ici
 clim = (Y[ids].min(), Y[ids].max())
 
 for i in ids:
