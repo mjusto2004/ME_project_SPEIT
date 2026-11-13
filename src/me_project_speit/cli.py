@@ -56,7 +56,8 @@ def build_parser() -> argparse.ArgumentParser:
     tr.add_argument("--model", default="mlp", help="registered model name (see 'list models')")
     tr.add_argument("--hidden", type=int, nargs="+", default=None, help="hidden layer sizes (mlp)")
     tr.add_argument("--epochs", type=int, default=300)
-    tr.add_argument("--batch-size", type=int, default=64)
+    tr.add_argument("--batch-size", type=int, default=None,
+                    help="rows per batch (simulations per batch for graph datasets); default depends on the dataset kind")
     tr.add_argument("--lr", type=float, default=1e-3)
     tr.add_argument("--patience", type=int, default=30)
     tr.add_argument("--seed", type=int, default=42)

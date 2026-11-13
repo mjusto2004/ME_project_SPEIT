@@ -7,7 +7,7 @@ enters through one random face and convection acts on every boundary.
 Three files share the same stem:
 
 - ``name.csv``: one row per node of every simulation,
-  ``sim, T0, P0, h, r, res, x, y, z, heated, T`` (``heated`` is 1 on the nodes
+  ``sim, T0, Phi0, h, r, res, x, y, z, heated, T`` (``heated`` is 1 on the nodes
   of the heated face). The rows of one simulation are contiguous.
 - ``name_edges.npz``: the connections, arrays ``sim``, ``src``, ``dst``. ``src``
   and ``dst`` are node indices *local to the simulation* (0 = its first row).
@@ -73,7 +73,10 @@ class GraphDataset(Dataset):
     """
 
     param_ranges = config.SPONGE_PARAM_RANGES
-    default_params = ("T0", "P0", "h", "r", "res")
+    default_params = ("T0", "Phi0", "h", "r", "res")
+    # Unit: simulations. One has ~80k edges and the GNN keeps several activations
+    # per edge and per layer: a large batch overflows GPU memory (and can freeze the PC).
+    default_batch_size = 2
 
     def __init__(self, X, Y, spec, sim, edge_sim, edge_src, edge_dst):
         super().__init__(X, Y, spec)

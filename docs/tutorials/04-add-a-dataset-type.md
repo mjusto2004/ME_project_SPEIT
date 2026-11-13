@@ -81,7 +81,7 @@ class SnapshotsDataset(Dataset):
     """Row: ``[params..., t, T_node_0, ..., T_node_{m-1}]``."""
 
     @classmethod
-    def build_spec(cls, input_names=("T0", "P0", "h"), name="cube"):
+    def build_spec(cls, input_names=("T0", "Phi0", "h"), name="cube"):
         names = cls.check_params(input_names)        # validates against cls.param_ranges (config.PARAM_RANGES by default)
         return DatasetSpec(
             name=name,
@@ -104,6 +104,8 @@ class SnapshotsDataset(Dataset):
     def fields(self):
         return self.Y                                # already (rows, n_nodes)
 ```
+
+Optional class attributes (defined on `Dataset`, override them if needed): `param_ranges` / `default_params` (which simulation parameters can vary) and `default_batch_size` (the batch size `train` uses without `--batch-size`; 64 by default; set it lower if one batch of your data can exhaust GPU memory, as `graph` does with 2 simulations).
 
 `rows_per_sample` is what keeps all rows of one simulation in the same train/validation/test subset, and what `load` uses to check the row count. The rows of one simulation must be **contiguous**; `generate` checks that `simulation_rows` returns exactly `(rows_per_sample, n_columns)` and raises a clear error otherwise.
 
@@ -142,9 +144,9 @@ and import it in `models/__init__.py`. More about models in [tutorial 3](03-add-
 ### Step 5 — check everything
 
 ```bash
-uv run --extra sim me-project-speit generate -n 12 --kind snapshots --params P0 h
+uv run --extra sim me-project-speit generate -n 12 --kind snapshots --params Phi0 h
 uv run me-project-speit list datasets
-# dataset_...  [snapshots] 3 inputs (P0, h, t) -> 560 outputs ...  compatible models: ['time_mlp']
+# dataset_...  [snapshots] 3 inputs (Phi0, h, t) -> 560 outputs ...  compatible models: ['time_mlp']
 uv run me-project-speit train --dataset dataset_... --model time_mlp --epochs 20
 uv run me-project-speit train --dataset dataset_... --model mlp
 # error: Model 'mlp' is incompatible ... needs a dataset of type ['FieldDataset'], got SnapshotsDataset (kind 'snapshots').

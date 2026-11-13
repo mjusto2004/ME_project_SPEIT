@@ -29,7 +29,7 @@ class PointwiseDataset(Dataset):
     """
 
     @classmethod
-    def build_spec(cls, input_names=("T0", "P0", "h"), name: str = "cube") -> DatasetSpec:
+    def build_spec(cls, input_names=("T0", "Phi0", "h"), name: str = "cube") -> DatasetSpec:
         names = cls.check_params(input_names)
         return DatasetSpec(
             name=name,

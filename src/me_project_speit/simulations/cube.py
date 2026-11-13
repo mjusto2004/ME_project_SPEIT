@@ -56,8 +56,8 @@ class CubeSimulation(Simulation):
             default value.
 
             - ``T0``: initial uniform temperature of the cube (K).
-            - ``P0``: power of the source (W); only ``HEAT_EFFICIENCY`` is
-              injected, as a flux on the surface of the source cylinder.
+            - ``Phi0``: heat flux (W.m-2) injected on the surface of the
+              source cylinder.
             - ``h``: convection coefficient on the cube faces (W.m-2.K-1).
 
         Returns
@@ -67,7 +67,7 @@ class CubeSimulation(Simulation):
             ``(config.N_NODES,)``.
         """
         p = cls.resolve_params(params)
-        t0, power, h = p["T0"], p["P0"], p["h"]
+        t0, flux, h = p["T0"], p["Phi0"], p["h"]
 
         a = config.CUBE_SIZE
         mesh, circle = cls.build_mesh()
@@ -84,9 +84,6 @@ class CubeSimulation(Simulation):
         nodes_convection = np.unique(np.concatenate(faces))
         nodes_source = mesh.Nodes_Cylinder(circle, direction=[0, 0, 1])
 
-        # Heat flux per unit of source surface.
-        power_surficial = power * config.HEAT_EFFICIENCY / (np.pi * config.SOURCE_DIAMETER * 1)
-
         dt = config.T_MAX / config.N_STEPS
         simu = cls._init_thermal(mesh, t0, dt)
 
@@ -98,7 +95,7 @@ class CubeSimulation(Simulation):
             cls._step(
                 simu,
                 (nodes_convection, cls._convection(simu, nodes_convection, h)),
-                (nodes_source, power_surficial),
+                (nodes_source, flux),
             )
             if verbose:
                 print(f"{t:.3f} s", end="\r")

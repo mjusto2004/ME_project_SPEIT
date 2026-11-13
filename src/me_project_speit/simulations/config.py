@@ -23,7 +23,6 @@ EXTRUSION_LAYERS = 4
 RHO = 2700.0  # kg.m-3
 CP = 896.0  # J.kg-1.K-1
 CONDUCTIVITY = 237.0  # W.m-1.K-1
-HEAT_EFFICIENCY = 0.05  # fraction of the power turned into heat
 T_EXTERIOR = 293.0  # K
 
 # --- Time discretisation -----------------------------------------------------
@@ -33,11 +32,11 @@ N_STEPS = 100
 # --- Simulation parameters that can be varied (name: default, sampling range) -
 # These are the possible *inputs* of a dataset. Parameters that a dataset does
 # not vary take their default value.
-PARAM_DEFAULTS = {"T0": 293.0, "P0": 30_000.0, "h": 300.0}
+PARAM_DEFAULTS = {"T0": 293.0, "Phi0": 1000.0, "h": 300.0}
 PARAM_RANGES = {
-    "T0": (146.5, 293.0),  # initial temperature, K
-    "P0": (15_000.0, 30_000.0),  # power, W
-    "h": (150.0, 300.0),  # convection coefficient, W.m-2.K-1
+    "T0": (273.0, 303.0),  # initial temperature, K
+    "Phi0": (15000.0, 30000.0),  # heat flux, W.m-2
+    "h": (50.0, 200.0),  # convection coefficient, W.m-2.K-1
 }
 
 # --- Reference mesh ----------------------------------------------------------
@@ -48,10 +47,10 @@ MESH_ID = "cube_560"
 # Parameters sampled for each simulation, as (min, max). 'res' is rounded to an int.
 SPONGE_PARAM_RANGES = {
     "T0": PARAM_RANGES["T0"],
-    "P0": PARAM_RANGES["P0"],
+    "Phi0": PARAM_RANGES["Phi0"],
     "h": PARAM_RANGES["h"],
-    "r": (0.08, 0.22),  # radius of the holes (m)
-    "res": (5, 10),  # mesh divisions of the cube edge (element size = 1/res)
+    "r": (0.05, 0.3),  # radius of the holes (m)
+    "res": (10, 25),  # mesh divisions of the cube edge (element size = 1/res)
 }
 SPONGE_PARAM_DEFAULTS = {**PARAM_DEFAULTS, "r": 0.15, "res": 8}
 INTEGER_PARAMS = {"res"}

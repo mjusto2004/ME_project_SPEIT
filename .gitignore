@@ -22,3 +22,11 @@ results/
 runs/
 Slurm_files/
 data/*
+
+# shell files
+*.bat
+*.ps1
+*.sh
+
+# notes folder
+notes/

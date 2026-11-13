@@ -88,10 +88,7 @@ class SpongeSimulation(Simulation):
             default value.
 
             - ``T0``: initial uniform temperature (K).
-            - ``P0``: power (W), spread as a flux
-              ``P0 * HEAT_EFFICIENCY / CUBE_SIZE**2`` over the whole heated face
-              (unlike :class:`~me_project_speit.simulations.CubeSimulation`,
-              where it is injected through the source cylinder).
+            - ``Phi0``: heat flux (W.m-2)
             - ``h``: convection coefficient (W.m-2.K-1).
             - ``r``, ``res``: hole radius and mesh resolution, see :meth:`build_mesh`.
 
@@ -106,7 +103,7 @@ class SpongeSimulation(Simulation):
         - ``heated``: (n_nodes,) bool, True on the nodes of the heated face.
         """
         p = cls.resolve_params(params)
-        t0, power, h, r, res = p["T0"], p["P0"], p["h"], p["r"], p["res"]
+        t0, flux, h, r, res = p["T0"], p["Phi0"], p["h"], p["r"], p["res"]
 
         mesh = cls.build_mesh(int(res), np.asarray(centers), r)
         if mesh is None:
@@ -121,9 +118,6 @@ class SpongeSimulation(Simulation):
         axis, value = config.FACES[face]
         heated = np.isclose(coord[:, axis], value)
         is_heated_boundary = heated[boundary]
-
-        # Heat flux on the heated face (W.m-2).
-        flux = power * config.HEAT_EFFICIENCY / config.CUBE_SIZE**2
 
         # Convection is applied explicitly (EasyFEA has no Robin term), which is only
         # stable if h*dt < rho*c*(element size). Use more, shorter steps when the mesh

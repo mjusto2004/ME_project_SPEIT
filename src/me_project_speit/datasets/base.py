@@ -71,7 +71,7 @@ class DatasetSpec:
     name : str
         Human-readable name.
     input_names : list[str]
-        Names of the input columns, in order (e.g. ``["T0", "P0", "h"]``).
+        Names of the input columns, in order (e.g. ``["T0", "Phi0", "h"]``).
     n_outputs : int
         Number of output values per row.
     output_kind : str
@@ -147,7 +147,7 @@ def load_spec(csv_path: str | Path) -> DatasetSpec:
     """Read the sidecar of ``csv_path``.
 
     A sidecar-less CSV is only accepted if it has the legacy 563-column
-    layout (``T0, P0, h`` + 560 nodal temperatures).
+    layout (``T0, Phi0, h`` + 560 nodal temperatures).
     """
     from .field import legacy_spec
 
@@ -230,7 +230,12 @@ class Dataset(ABC):
     #: Simulation parameters this kind can vary: name -> (min, max).
     param_ranges: ClassVar[dict] = config.PARAM_RANGES
     #: Parameters varied by default (``generate`` without ``--params``).
-    default_params: ClassVar[tuple] = ("T0", "P0", "h")
+    default_params: ClassVar[tuple] = ("T0", "Phi0", "h")
+    #: Batch size used by ``train`` when ``--batch-size`` is not given. Its unit is
+    #: whatever :meth:`make_loader` batches (rows by default; a subclass that
+    #: batches whole simulations, like ``graph``, counts simulations). Override it
+    #: when one batch can get big enough to exhaust GPU memory.
+    default_batch_size: ClassVar[int] = 64
 
     def __init__(self, X: np.ndarray, Y: np.ndarray, spec: DatasetSpec):
         self.X, self.Y, self.spec = X, Y, spec
@@ -289,7 +294,7 @@ class Dataset(ABC):
     def generate(
         cls,
         n: int,
-        input_names=("T0", "P0", "h"),
+        input_names=("T0", "Phi0", "h"),
         name: str = "cube",
         seed: int | None = None,
         verbose: bool = True,

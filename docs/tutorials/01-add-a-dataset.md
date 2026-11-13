@@ -5,8 +5,8 @@ Goal: make a new CSV usable with `train`, `list datasets` and `show`, **without 
 ## A. Generate it with the project
 
 ```bash
-uv run --extra sim me-project-speit generate -n 200 --params T0 P0 h --seed 1
-uv run --extra sim me-project-speit generate -n 200 --params P0 h --kind pointwise
+uv run --extra sim me-project-speit generate -n 200 --params T0 Phi0 h --seed 1
+uv run --extra sim me-project-speit generate -n 200 --params Phi0 h --kind pointwise
 ```
 
 This writes `data/dataset_<timestamp>_<n>.csv` and the matching `.json`. Rename **both** files together (and update `"name"` in the JSON) to keep a nice name. Generated files are git-ignored (`data/dataset_*`); a renamed file is not, so it will be committed.
@@ -33,11 +33,11 @@ For `pointwise`, the rows of one simulation must be **contiguous** and every sim
 ```json
 {
   "name": "my_data",
-  "input_names": ["P0", "h"],
+  "input_names": ["Phi0", "h"],
   "n_outputs": 560,
   "output_kind": "nodal_temperature",
   "mesh_id": "cube_560",
-  "input_ranges": {"P0": [15000, 30000], "h": [150, 300]},
+  "input_ranges": {"Phi0": [500, 1500], "h": [150, 300]},
   "kind": "field",
   "rows_per_sample": 1
 }
@@ -65,7 +65,7 @@ Y = ...  # (n_sim, m)  fields
 
 np.savetxt("data/my_data.csv", np.hstack([X, Y]), delimiter=",")
 save_spec(
-    DatasetSpec(name="my_data", input_names=["P0", "h"], n_outputs=Y.shape[1],
+    DatasetSpec(name="my_data", input_names=["Phi0", "h"], n_outputs=Y.shape[1],
                 mesh_id="my_mesh"),
     "data/my_data.csv",            # writes data/my_data.json
 )

@@ -6,9 +6,9 @@ A unit aluminium cube is heated by a cylindrical source along its z axis and coo
 
 | Input | Meaning | Sampled range |
 |-------|---------|---------------|
-| `T0`  | initial temperature (K) | 146.5 – 293 |
-| `P0`  | source power (W) | 15 000 – 30 000 |
-| `h`   | convection coefficient (W·m⁻²·K⁻¹) | 150 – 300 |
+| `T0`  | initial temperature (K) | 293 (fixed) |
+| `Phi0` | heat flux (W.m-2) | 500 – 1500 |
+| `h`   | convection coefficient (W·m⁻²·K⁻¹) | 150 (fixed) |
 
 Once trained, the network replaces a ~0.5 s simulation with a single forward pass.
 
@@ -68,11 +68,11 @@ The package installs a `me-project-speit` command (also available as `python -m 
 
 ```bash
 me-project-speit generate -n 90 --output-dir data --seed 0
-me-project-speit generate -n 90 --params T0 h      # vary only T0 and h (P0 keeps its default)
+me-project-speit generate -n 90 --params T0 h      # vary only T0 and h (Phi0 keeps its default)
 me-project-speit generate -n 90 --kind pointwise   # one row per node, coordinates as inputs
 ```
 
-Runs `n` simulations, **in parallel** (`--workers N`, default: the number of cores up to 8; `--workers 1` runs in the current process). The dataset is the same whatever the number of workers, so a given `--seed` always gives the same file. Typical gain for 40 simulations on 8 workers: 3.8x for `graph`, 2.8x for `pointwise` (start-up of the worker processes costs a few seconds, so the gain grows with `n`). Each simulation uses random inputs (`--params`, default `T0 P0 h`; ranges and defaults in `simulations/config.py`) and writes `data/dataset_<timestamp>_<n>.csv` **and** `data/dataset_<timestamp>_<n>.json`. Each CSV row holds the inputs followed by the 560 nodal temperatures in °C.
+Runs `n` simulations, **in parallel** (`--workers N`, default: the number of cores up to 8; `--workers 1` runs in the current process). The dataset is the same whatever the number of workers, so a given `--seed` always gives the same file. Typical gain for 40 simulations on 8 workers: 3.8x for `graph`, 2.8x for `pointwise` (start-up of the worker processes costs a few seconds, so the gain grows with `n`). Each simulation uses random inputs (`--params`, default `T0 Phi0 h`; ranges and defaults in `simulations/config.py`) and writes `data/dataset_<timestamp>_<n>.csv` **and** `data/dataset_<timestamp>_<n>.json`. Each CSV row holds the inputs followed by the 560 nodal temperatures in °C.
 
 ### 2. Train
 
@@ -135,7 +135,7 @@ from me_project_speit.inference import Predictor
 result = train(TrainConfig(dataset="data_test", epochs=100, device="cpu"))
 
 predictor = Predictor(result["checkpoint"])
-print(predictor.spec.input_names)                 # ['T0', 'P0', 'h']
+print(predictor.spec.input_names)                 # ['T0', 'Phi0', 'h']
 field = predictor.predict([250.0, 25_000.0, 200.0])  # (1, 560) in °C
 ```
 
@@ -143,7 +143,7 @@ field = predictor.predict([250.0, 25_000.0, 200.0])  # (1, 560) in °C
 
 Different datasets can have different inputs and outputs, and a model only makes sense for some of them. To catch mismatches early, **every dataset describes itself** and **every model declares what it accepts**:
 
-- Each `foo.csv` has a `foo.json` next to it (a `DatasetSpec`): `input_names`, `n_outputs`, `output_kind`, `mesh_id`, `input_ranges`. `generate` writes it automatically. A CSV without a JSON is only accepted if it has the legacy 563-column format (`T0, P0, h` → 560 nodes); otherwise loading fails with a message asking for the JSON.
+- Each `foo.csv` has a `foo.json` next to it (a `DatasetSpec`): `input_names`, `n_outputs`, `output_kind`, `mesh_id`, `input_ranges`. `generate` writes it automatically. A CSV without a JSON is only accepted if it has the legacy 563-column format (`T0, Phi0, h` → 560 nodes); otherwise loading fails with a message asking for the JSON.
 - Models are built *from* the dataset spec (`n_inputs`, `n_outputs`), so the `mlp` adapts to any shape.
 - Before training starts, `train` checks the pair. An incompatible pair fails immediately and suggests alternatives, e.g.:
 
@@ -160,9 +160,9 @@ Each dataset type is a subclass of the abstract `Dataset` (`src/me_project_speit
 
 | Type (`kind`) | Class | Row | Inputs → output | Models |
 |---------------|-------|-----|-----------------|--------|
-| `field` (default) | `FieldDataset` | one per simulation | `T0, P0, h` → all 560 node temperatures | `mlp` |
-| `pointwise` | `PointwiseDataset` | one per (simulation, node) | `T0, P0, h, x, y, z` → temperature at that node | `coord_mlp` |
-| `graph` | `GraphDataset` | one per node; every simulation has its own mesh | `T0, P0, h, r, res, x, y, z, heated` + the node connections → temperature at that node | `gnn` |
+| `field` (default) | `FieldDataset` | one per simulation | `T0, Phi0, h` → all 560 node temperatures | `mlp` |
+| `pointwise` | `PointwiseDataset` | one per (simulation, node) | `T0, Phi0, h, x, y, z` → temperature at that node | `coord_mlp` |
+| `graph` | `GraphDataset` | one per node; every simulation has its own mesh | `T0, Phi0, h, r, res, x, y, z, heated` + the node connections → temperature at that node | `gnn` |
 
 A `pointwise` dataset has `n_simulations × 560` rows, with the rows of one simulation contiguous (`rows_per_sample` in the JSON). Train/validation/test are split **per simulation**, never per row, so the nodes of a test simulation never leak into training. Each model lists the dataset classes it accepts (`supported_datasets`); training `mlp` on a pointwise dataset (or `coord_mlp` on a field one) stops immediately with an error listing the models that do fit.
 
@@ -181,7 +181,7 @@ A graph dataset is made of three files with the same stem:
 
 | File | Content |
 |------|---------|
-| `name.csv` | one row per node of every simulation: `sim, T0, P0, h, r, res, x, y, z, heated, T` (`heated` = 1 on the heated face; rows of a simulation are contiguous) |
+| `name.csv` | one row per node of every simulation: `sim, T0, Phi0, h, r, res, x, y, z, heated, T` (`heated` = 1 on the heated face; rows of a simulation are contiguous) |
 | `name_edges.npz` | the connections: arrays `sim`, `src`, `dst` (node indices *local to the simulation*, each connection in both directions) |
 | `name.json` | the description (`kind: "graph"`, `rows_per_sample: null` because the size varies) |
 

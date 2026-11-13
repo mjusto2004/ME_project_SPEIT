@@ -17,7 +17,7 @@ class FieldDataset(Dataset):
     """
 
     @classmethod
-    def build_spec(cls, input_names=("T0", "P0", "h"), name: str = "cube") -> DatasetSpec:
+    def build_spec(cls, input_names=("T0", "Phi0", "h"), name: str = "cube") -> DatasetSpec:
         names = cls.check_params(input_names)
         return DatasetSpec(
             name=name,
@@ -43,4 +43,4 @@ class FieldDataset(Dataset):
 
 def legacy_spec() -> DatasetSpec:
     """Spec of CSVs created before sidecars existed (563 columns)."""
-    return FieldDataset.build_spec(("T0", "P0", "h"), name="legacy")
+    return FieldDataset.build_spec(("T0", "Phi0", "h"), name="legacy")

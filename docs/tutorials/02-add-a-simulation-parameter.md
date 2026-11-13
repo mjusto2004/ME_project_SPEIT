@@ -9,10 +9,10 @@ Example used below: **`D`**, the source diameter (m).
 `generate` only accepts names found in these two dictionaries:
 
 ```python
-PARAM_DEFAULTS = {"T0": 293.0, "P0": 30_000.0, "h": 300.0, "D": 1 / 3}
+PARAM_DEFAULTS = {"T0": 293.0, "Phi0": 1000.0, "h": 300.0, "D": 1 / 3}
 PARAM_RANGES = {
     "T0": (146.5, 293.0),
-    "P0": (15_000.0, 30_000.0),
+    "Phi0": (500.0, 1500.0),
     "h": (150.0, 300.0),
     "D": (0.2, 0.5),          # sampling range for generate
 }
@@ -26,7 +26,7 @@ The default is used whenever a dataset does not vary the parameter, so existing 
 
 ```python
 p = cls.resolve_params(params)
-t0, power, h, diameter = p["T0"], p["P0"], p["h"], p["D"]
+t0, flux, h, diameter = p["T0"], p["Phi0"], p["h"], p["D"]
 ```
 
 Then replace `config.SOURCE_DIAMETER` by `diameter` in the heat-flux formula. If the quantity changes the **geometry or mesh** (as a diameter does), also pass it to `cls.build_mesh(...)`.
@@ -38,11 +38,11 @@ Then replace `config.SOURCE_DIAMETER` by `diameter` in the heat-flux formula. If
 ## Step 3 — generate and check
 
 ```bash
-uv run --extra sim me-project-speit generate -n 5 --params P0 D
+uv run --extra sim me-project-speit generate -n 5 --params Phi0 D
 uv run me-project-speit list datasets
 ```
 
-The new dataset's JSON lists `input_names: ["P0", "D"]` and `input_ranges` for both. Parameters you did not list keep their defaults.
+The new dataset's JSON lists `input_names: ["Phi0", "D"]` and `input_ranges` for both. Parameters you did not list keep their defaults.
 
 ## Step 4 — add a test
 
@@ -53,14 +53,14 @@ import pytest
 from me_project_speit.datasets import FieldDataset
 
 def test_new_parameter_is_known():
-    assert FieldDataset.build_spec(("P0", "D")).input_names == ["P0", "D"]
+    assert FieldDataset.build_spec(("Phi0", "D")).input_names == ["Phi0", "D"]
 
 def test_unknown_parameter_rejected():
     with pytest.raises(ValueError, match="Unknown input"):
-        FieldDataset.build_spec(("P0", "bogus"))
+        FieldDataset.build_spec(("Phi0", "bogus"))
 ```
 
 ## Things to remember
 
 - Models need no change: they are built from the dataset's number of inputs.
-- `mlp` trained on `[P0, h]` cannot be fed `[T0, P0, h]` later; `Predictor.predict` checks the input count and tells you which inputs the model expects.
+- `mlp` trained on `[Phi0, h]` cannot be fed `[T0, Phi0, h]` later; `Predictor.predict` checks the input count and tells you which inputs the model expects.

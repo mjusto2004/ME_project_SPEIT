@@ -25,7 +25,7 @@ class TrainConfig:
     model_kwargs: dict = field(default_factory=dict)  # e.g. {"hidden": [64, 64]}
     data_dir: Path = DEFAULT_DATA_DIR
     epochs: int = 300
-    batch_size: int = 64
+    batch_size: int | None = None  # None: the dataset kind's default
     lr: float = 1e-3
     patience: int = 30
     seed: int = 42
@@ -36,7 +36,12 @@ class TrainConfig:
         self.dataset = Path(self.dataset)
         if self.output_dir is not None:
             self.output_dir = Path(self.output_dir)
-        if self.epochs < 1 or self.batch_size < 1 or self.lr <= 0 or self.patience < 1:
+        if (
+            self.epochs < 1
+            or (self.batch_size is not None and self.batch_size < 1)
+            or self.lr <= 0
+            or self.patience < 1
+        ):
             raise ValueError("epochs, batch_size, patience and lr must be positive")
         if self.device not in ("auto", "cuda", "cpu"):
             raise ValueError("device must be 'auto', 'cuda' or 'cpu'")
@@ -111,6 +116,9 @@ def train(cfg: TrainConfig) -> dict:
     if n < 50:
         print("Warning: dataset is too small for reliable evaluation.")
 
+    batch_size = cfg.batch_size or data.default_batch_size
+    print(f"Batch size: {batch_size}")
+
     split = data.split(cfg.seed)
     train_idx, val_idx, test_idx = split.train, split.val, split.test
 
@@ -126,7 +134,7 @@ def train(cfg: TrainConfig) -> dict:
     def make_loader(indices, shuffle):
         # Each kind of dataset knows how to build its batches (rows, whole graphs...).
         return data.make_loader(
-            X_scaled, Y_scaled, indices, cfg.batch_size, shuffle,
+            X_scaled, Y_scaled, indices, batch_size, shuffle,
             pin_memory=device.type == "cuda",
         )
 
