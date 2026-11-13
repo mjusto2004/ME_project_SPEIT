@@ -1,7 +1,7 @@
 """The fixed cube (dataset kinds ``field`` and ``pointwise``). Needs ``EasyFEA``.
 
 The mesh is always the same (``config.N_NODES`` nodes), so only
-``config.PARAM_DEFAULTS`` vary between samples. A unit cube is heated by a
+the ranges of ``config.CUBE_PARAMS`` vary between samples. A unit cube is heated by a
 cylindrical source along its z axis and cooled by convection on its six faces.
 """
 
@@ -16,11 +16,13 @@ from .base import Simulation
 class CubeSimulation(Simulation):
     """Cube with a cylindrical heat source and a fixed mesh."""
 
-    param_defaults = config.PARAM_DEFAULTS
-    param_ranges = config.PARAM_RANGES
+    params = config.CUBE_PARAMS
 
     @staticmethod
-    def build_mesh():
+    def build_mesh(
+        res: int = config.MESH_RESOLUTION_DOMAIN,
+        cylinder_res: int = config.MESH_RESOLUTION_SOURCE,
+    ):
         """Build the 3D tetrahedral mesh of the cube and the heat-source circle.
 
         Returns
@@ -32,11 +34,11 @@ class CubeSimulation(Simulation):
         from EasyFEA.Geoms import Circle, Domain, Point
 
         a = config.CUBE_SIZE
-        domain = Domain(Point(0, 0), Point(a, a), a / config.MESH_RESOLUTION_DOMAIN)
+        domain = Domain(Point(0, 0), Point(a, a), a / res)
         circle = Circle(
             Point(a / 2, a / 2),
             diam=config.SOURCE_DIAMETER,
-            meshSize=a / config.MESH_RESOLUTION_SOURCE,
+            meshSize=a / cylinder_res,
         )
         mesh = domain.Mesh_Extrude(
             [circle], [0, 0, a], [config.EXTRUSION_LAYERS], ElemType.TETRA4
@@ -52,7 +54,7 @@ class CubeSimulation(Simulation):
         verbose : bool
             Print the progress of the time loop.
         **params : float
-            Any of the names in ``param_defaults``; missing ones take their
+            Any of the names in ``params``; missing ones take their
             default value.
 
             - ``T0``: initial uniform temperature of the cube (K).
@@ -67,10 +69,10 @@ class CubeSimulation(Simulation):
             ``(config.N_NODES,)``.
         """
         p = cls.resolve_params(params)
-        t0, flux, h = p["T0"], p["Phi0"], p["h"]
+        t0, flux, h, res, cylinder_res = p["T0"], p["Phi0"], p["h"], p["res"], p["cylinder_res"]
 
         a = config.CUBE_SIZE
-        mesh, circle = cls.build_mesh()
+        mesh, circle = cls.build_mesh(res, cylinder_res)
 
         # Node sets: the six faces (convection) and the source cylinder (heating).
         faces = [

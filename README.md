@@ -198,7 +198,7 @@ Drop `my_data.csv` (rows: inputs then outputs) and `my_data.json` in `data/`. Mi
  "output_kind": "nodal_temperature", "mesh_id": "my_mesh", "kind": "field"}
 ```
 
-Then `me-project-speit list datasets` shows it with its compatible models, and `train --dataset my_data` uses it. To make `generate` sample a new simulation parameter, add it to `PARAM_DEFAULTS` / `PARAM_RANGES` in `simulations/config.py` and use it in `simulations/cube.py`.
+Then `me-project-speit list datasets` shows it with its compatible models, and `train --dataset my_data` uses it. To make `generate` sample a new simulation parameter, add one `Param(default, (min, max))` line to `CUBE_PARAMS` (or to the common `PARAMS`) in `simulations/config.py` and use it in `simulations/cube.py`.
 
 ### Adding a model
 

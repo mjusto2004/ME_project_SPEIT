@@ -82,7 +82,7 @@ class SnapshotsDataset(Dataset):
 
     @classmethod
     def build_spec(cls, input_names=("T0", "Phi0", "h"), name="cube"):
-        names = cls.check_params(input_names)        # validates against cls.param_ranges (config.PARAM_RANGES by default)
+        names = cls.check_params(input_names)        # validates against the parameters with a range in cls.params (config.CUBE_PARAMS by default)
         return DatasetSpec(
             name=name,
             input_names=names + ["t"],               # the time is an input
@@ -105,7 +105,7 @@ class SnapshotsDataset(Dataset):
         return self.Y                                # already (rows, n_nodes)
 ```
 
-Optional class attributes (defined on `Dataset`, override them if needed): `param_ranges` / `default_params` (which simulation parameters can vary) and `default_batch_size` (the batch size `train` uses without `--batch-size`; 64 by default; set it lower if one batch of your data can exhaust GPU memory, as `graph` does with 2 simulations).
+Optional class attributes (defined on `Dataset`, override them if needed): `params` / `default_params` (the simulation parameters, and which of them `generate` varies by default) and `default_batch_size` (the batch size `train` uses without `--batch-size`; 64 by default; set it lower if one batch of your data can exhaust GPU memory, as `graph` does with 2 simulations).
 
 `rows_per_sample` is what keeps all rows of one simulation in the same train/validation/test subset, and what `load` uses to check the row count. The rows of one simulation must be **contiguous**; `generate` checks that `simulation_rows` returns exactly `(rows_per_sample, n_columns)` and raises a clear error otherwise.
 

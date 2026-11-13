@@ -21,16 +21,13 @@ KELVIN = 273.15  # temperatures are solved in K and returned in deg C
 class Simulation(ABC):
     """A transient thermal simulation of the unit cube.
 
-    Subclasses declare the parameters they accept (``param_defaults``,
-    ``param_ranges``) and implement :meth:`run`. Simulations hold no state:
+    Subclasses declare the parameters they accept (``params``) and implement :meth:`run`. Simulations hold no state:
     everything is a class or static method, so they can be called from worker
     processes.
     """
 
-    #: name -> default value of each parameter the simulation accepts.
-    param_defaults: ClassVar[dict[str, float]]
-    #: name -> (min, max) range used to sample each parameter.
-    param_ranges: ClassVar[dict[str, tuple[float, float]]]
+    #: name -> :class:`~.config.Param` (default and range) of each accepted parameter.
+    params: ClassVar[dict[str, config.Param]]
 
     @classmethod
     @abstractmethod
@@ -40,13 +37,14 @@ class Simulation(ABC):
     @classmethod
     def resolve_params(cls, params: dict) -> dict:
         """``params`` completed with the defaults; unknown names raise ``ValueError``."""
-        unknown = set(params) - set(cls.param_defaults)
+        defaults = config.defaults(cls.params)
+        unknown = set(params) - set(defaults)
         if unknown:
             raise ValueError(
                 f"Unknown simulation parameter(s) {sorted(unknown)}; "
-                f"available: {sorted(cls.param_defaults)}"
+                f"available: {sorted(defaults)}"
             )
-        return {**cls.param_defaults, **params}
+        return {**defaults, **params}
 
     # --- EasyFEA steps shared by the subclasses -------------------------------
 

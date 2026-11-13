@@ -21,8 +21,7 @@ from .base import Simulation
 class SpongeSimulation(Simulation):
     """Cube with random spherical holes and a mesh that changes at every run."""
 
-    param_defaults = config.SPONGE_PARAM_DEFAULTS
-    param_ranges = config.SPONGE_PARAM_RANGES
+    params = config.SPONGE_PARAMS
 
     @staticmethod
     def build_mesh(res: int, centers: np.ndarray, r: float):
@@ -84,7 +83,7 @@ class SpongeSimulation(Simulation):
         face : int
             Face of the cube (0..5, see ``config.FACES``) through which heat enters.
         **params : float
-            Any of the names in ``param_defaults``; missing ones take their
+            Any of the names in ``params``; missing ones take their
             default value.
 
             - ``T0``: initial uniform temperature (K).

@@ -27,7 +27,7 @@ def plot_run(
 ) -> list[Path]:
     """Plot a training run.
 
-    Figure 1 (any model): training curves. Figure 2 (``graph`` datasets): for
+    Figure 1 (any model): training curves. Figure 2 (``graph`` and ``pointwise`` datasets): for
     the test simulation number ``sample``, the true temperature, the
     prediction and the error at every node, plus true vs predicted for all
     test simulations.
@@ -54,10 +54,10 @@ def plot_run(
     checkpoint = torch.load(run_dir / "best_model.pt", map_location="cpu", weights_only=True)
     figures = {"curves": _curves(plt, run_dir, checkpoint)}
 
-    if checkpoint["spec"]["kind"] == "graph":
-        figures["mesh"] = _graph_prediction(plt, run_dir, checkpoint, sample, half)
+    if checkpoint["spec"]["kind"] in ("graph", "pointwise"):
+        figures["mesh"] = _mesh_prediction(plt, run_dir, checkpoint, sample, half)
     else:
-        print("Only the training curves are drawn: mesh plots exist for 'graph' datasets.")
+        print("Only the training curves are drawn: 3D plots exist for 'graph' and 'pointwise' datasets.")
 
     saved = []
     if save is None:
@@ -90,8 +90,11 @@ def _curves(plt, run_dir: Path, checkpoint: dict):
     return fig
 
 
-def _graph_prediction(plt, run_dir: Path, checkpoint: dict, sample: int, half: bool):
-    """True / predicted / error on the nodes of one test mesh, and parity plot."""
+def _mesh_prediction(plt, run_dir: Path, checkpoint: dict, sample: int, half: bool):
+    """True / predicted / error on the nodes of one test mesh, and parity plot.
+
+    For ``graph`` and ``pointwise`` datasets, whose node coordinates are inputs.
+    """
     from .datasets import load_dataset
     from .inference import Predictor
 
@@ -103,18 +106,32 @@ def _graph_prediction(plt, run_dir: Path, checkpoint: dict, sample: int, half: b
     data = load_dataset(dataset_path)
     predictor = Predictor(run_dir / "best_model.pt")
 
-    test_sims = sorted(set(data.sim[checkpoint["test_indices"].numpy()].tolist()))
+    names = data.spec.input_names
+    test_rows = checkpoint["test_indices"].numpy()
+
+    # Per kind of dataset: which simulations are in the test set, and how to get
+    # the node inputs, true values and predictions of one of them.
+    if checkpoint["spec"]["kind"] == "graph":
+        test_sims = sorted(set(data.sim[test_rows].tolist()))
+
+        def predict(s):
+            a, b = data.node_start[s], data.node_stop[s]
+            c, d = data.edge_start[s], data.edge_stop[s]
+            edges = np.stack([data.edge_src[c:d], data.edge_dst[c:d]])
+            return data.X[a:b], data.Y[a:b, 0], predictor.predict(data.X[a:b], edges)[:, 0]
+
+    else:  # pointwise: the rows of simulation s are contiguous, rows_per_sample each
+        n = data.spec.rows_per_sample
+        test_sims = sorted(set((test_rows // n).tolist()))
+
+        def predict(s):
+            rows = slice(s * n, (s + 1) * n)
+            return data.X[rows], data.Y[rows, 0], predictor.predict(data.X[rows])[:, 0]
+
     if not 0 <= sample < len(test_sims):
         raise ValueError(f"--sample must be between 0 and {len(test_sims) - 1} (test simulations).")
 
-    def predict(s):
-        a, b = data.node_start[s], data.node_stop[s]
-        c, d = data.edge_start[s], data.edge_stop[s]
-        edges = np.stack([data.edge_src[c:d], data.edge_dst[c:d]])
-        return data.X[a:b], data.Y[a:b, 0], predictor.predict(data.X[a:b], edges)[:, 0]
-
     fig = plt.figure(figsize=(15, 8))
-    names = data.spec.input_names
 
     # --- one test mesh: true, predicted, error -------------------------------
     x, true, pred = predict(test_sims[sample])

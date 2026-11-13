@@ -21,6 +21,8 @@ N = 6  # rows per simulation of the toy kind
 class ToySeriesDataset(Dataset):
     """Row per (simulation, step): [p, t, value]; the 'simulator' is a formula."""
 
+    params = {"P0": config.Param(1.0, (0.5, 2.0))}  # this kind's own parameter
+
     @classmethod
     def build_spec(cls, input_names=("P0",), name="toy"):
         names = cls.check_params(input_names)

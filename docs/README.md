@@ -31,7 +31,7 @@ Three ideas keep datasets and models interchangeable:
 
 | File (`src/me_project_speit/`) | Role |
 |------|------|
-| `simulations/config.py` | physical constants, `PARAM_DEFAULTS`, `PARAM_RANGES`, `N_NODES`, `MESH_ID`, sponge parameters |
+| `simulations/config.py` | physical constants, `PARAMS` (common), `CUBE_PARAMS`, `SPONGE_PARAMS` (default and range of each parameter), `N_NODES`, `MESH_ID`, sponge parameters |
 | `simulations/base.py` | abstract `Simulation`: parameter check and the EasyFEA steps shared by the two simulations |
 | `simulations/cube.py` | `CubeSimulation` (kinds `field`, `pointwise`): `build_mesh()`, `run(**params)` (needs EasyFEA) |
 | `datasets/base.py` | abstract `Dataset`, `DatasetSpec`, `@register_dataset`, `load_dataset`, `save_dataset`, `split_indices` |

@@ -227,8 +227,8 @@ class Dataset(ABC):
 
     kind: ClassVar[str] = ""  # set by @register_dataset
 
-    #: Simulation parameters this kind can vary: name -> (min, max).
-    param_ranges: ClassVar[dict] = config.PARAM_RANGES
+    #: Parameters of the simulation behind this kind (a dataset can vary those with a range).
+    params: ClassVar[dict[str, config.Param]] = config.CUBE_PARAMS
     #: Parameters varied by default (``generate`` without ``--params``).
     default_params: ClassVar[tuple] = ("T0", "Phi0", "h")
     #: Batch size used by ``train`` when ``--batch-size`` is not given. Its unit is
@@ -273,13 +273,14 @@ class Dataset(ABC):
     # ---- helpers for subclasses --------------------------------------------
     @classmethod
     def check_params(cls, input_names) -> list[str]:
-        """Validate simulation parameter names against ``cls.param_ranges``."""
+        """Validate simulation parameter names against the variable ones of ``cls.params``."""
         names = list(input_names)
-        unknown = [n for n in names if n not in cls.param_ranges]
+        variable = config.ranges(cls.params)
+        unknown = [n for n in names if n not in variable]
         if unknown:
             raise ValueError(
                 f"Unknown input parameter(s) {unknown} for kind '{cls.kind}'; "
-                f"available: {sorted(cls.param_ranges)}"
+                f"available: {sorted(variable)}"
             )
         if len(set(names)) != len(names):
             raise ValueError("Duplicate input parameters.")
@@ -287,7 +288,7 @@ class Dataset(ABC):
 
     @classmethod
     def ranges(cls, names) -> dict[str, tuple[float, float]]:
-        return {n: cls.param_ranges[n] for n in names}
+        return {n: cls.params[n].range for n in names}
 
     # ---- shared behaviour --------------------------------------------------
     @classmethod

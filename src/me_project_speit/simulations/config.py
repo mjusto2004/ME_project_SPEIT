@@ -3,14 +3,39 @@
 Everything that must stay consistent between the simulators, the dataset files
 and the neural network lives here.
 
-There are two simulations, each with its own parameters:
+Each simulation has one dictionary of parameters, ``<SIMULATION>_PARAMS``:
+name -> :class:`Param` (default value and, if a dataset can vary it, its range).
+``PARAMS`` holds the parameters common to every simulation, and the others extend
+it with ``**``:
 
-- ``PARAM_DEFAULTS`` / ``PARAM_RANGES``: :class:`~.cube.CubeSimulation` (kinds
-  ``field`` and ``pointwise``);
-- ``SPONGE_PARAM_DEFAULTS`` / ``SPONGE_PARAM_RANGES``:
-  :class:`~.sponge.SpongeSimulation` (kind ``graph``), the same plus the hole
-  radius ``r`` and the mesh resolution ``res``.
+- ``CUBE_PARAMS``: :class:`~.cube.CubeSimulation` (dataset kinds ``field`` and
+  ``pointwise``): the common ones plus its mesh settings;
+- ``SPONGE_PARAMS``: :class:`~.sponge.SpongeSimulation` (dataset kind ``graph``):
+  the common ones plus the hole radius ``r`` and the mesh resolution ``res``.
+
+To add a parameter, add one ``Param`` line to the right dictionary.
 """
+
+from typing import NamedTuple
+
+
+class Param(NamedTuple):
+    """A simulation parameter: its default and how a dataset can sample it."""
+
+    default: float
+    range: tuple[float, float] | None = None  # (min, max); None: cannot be varied
+    integer: bool = False  # sampled values are rounded to an int
+
+
+def defaults(params: dict[str, Param]) -> dict[str, float]:
+    """name -> default value of every parameter."""
+    return {name: p.default for name, p in params.items()}
+
+
+def ranges(params: dict[str, Param]) -> dict[str, tuple[float, float]]:
+    """name -> (min, max) of the parameters a dataset can vary."""
+    return {name: p.range for name, p in params.items() if p.range is not None}
+
 
 # --- Geometry (unit cube with a cylindrical heat source along z) -------------
 CUBE_SIZE = 1.0  # m
@@ -29,31 +54,33 @@ T_EXTERIOR = 293.0  # K
 T_MAX = 10_000.0  # s
 N_STEPS = 100
 
-# --- Simulation parameters that can be varied (name: default, sampling range) -
-# These are the possible *inputs* of a dataset. Parameters that a dataset does
-# not vary take their default value.
-PARAM_DEFAULTS = {"T0": 293.0, "Phi0": 1000.0, "h": 300.0}
-PARAM_RANGES = {
-    "T0": (273.0, 303.0),  # initial temperature, K
-    "Phi0": (15000.0, 30000.0),  # heat flux, W.m-2
-    "h": (50.0, 200.0),  # convection coefficient, W.m-2.K-1
+# --- Parameters common to every simulation -----------------------------------
+PARAMS = {
+    "T0": Param(293.0, (273.0, 303.0)),  # initial temperature, K
+    "Phi0": Param(1000.0, (15000.0, 30000.0)),  # heat flux, W.m-2
+    "h": Param(300.0, (50.0, 200.0)),  # convection coefficient, W.m-2.K-1
+}
+
+# --- Cube (dataset kinds 'field' and 'pointwise') ------------------------------
+# "res" / "cylinder_res": mesh divisions of the cube edge / of the source circle.
+# They have no range on purpose: changing them changes the number of nodes, but
+# these datasets assume N_NODES. They can be passed to CubeSimulation.run by hand.
+CUBE_PARAMS = {
+    **PARAMS,
+    "res": Param(MESH_RESOLUTION_DOMAIN),
+    "cylinder_res": Param(MESH_RESOLUTION_SOURCE),
 }
 
 # --- Reference mesh ----------------------------------------------------------
 N_NODES = 560  # number of nodes of the mesh built from the settings above
 MESH_ID = "cube_560"
 
-# --- "Sponge" geometry (dataset kind 'graph'): unit cube minus spherical holes -
-# Parameters sampled for each simulation, as (min, max). 'res' is rounded to an int.
-SPONGE_PARAM_RANGES = {
-    "T0": PARAM_RANGES["T0"],
-    "Phi0": PARAM_RANGES["Phi0"],
-    "h": PARAM_RANGES["h"],
-    "r": (0.05, 0.3),  # radius of the holes (m)
-    "res": (10, 25),  # mesh divisions of the cube edge (element size = 1/res)
+# --- Sponge (dataset kind 'graph'): unit cube minus spherical holes ------------
+SPONGE_PARAMS = {
+    **PARAMS,
+    "r": Param(0.15, (0.05, 0.3)),  # radius of the holes, m
+    "res": Param(8, (10, 25), integer=True),  # mesh divisions of the cube edge (element size = 1/res)
 }
-SPONGE_PARAM_DEFAULTS = {**PARAM_DEFAULTS, "r": 0.15, "res": 8}
-INTEGER_PARAMS = {"res"}
 MAX_HOLES = 20  # the number of holes is drawn in 1..MAX_HOLES
 
 # Face index -> (axis, coordinate): 0: x=0, 1: x=1, 2: y=0, 3: y=1, 4: z=0, 5: z=1

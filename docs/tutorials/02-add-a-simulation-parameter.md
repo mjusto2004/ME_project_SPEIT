@@ -6,23 +6,24 @@ Example used below: **`D`**, the source diameter (m).
 
 ## Step 1 — declare it in `simulations/config.py`
 
-`generate` only accepts names found in these two dictionaries:
+Each simulation has one dictionary of parameters, `<SIMULATION>_PARAMS`, mapping a name to a `Param(default, range)`. `PARAMS` holds the ones common to all simulations; `CUBE_PARAMS` (kinds `field` and `pointwise`) and `SPONGE_PARAMS` (kind `graph`) extend it with `**`. `generate` only accepts the names that have a range. For a parameter of the cube only:
 
 ```python
-PARAM_DEFAULTS = {"T0": 293.0, "Phi0": 1000.0, "h": 300.0, "D": 1 / 3}
-PARAM_RANGES = {
-    "T0": (146.5, 293.0),
-    "Phi0": (500.0, 1500.0),
-    "h": (150.0, 300.0),
-    "D": (0.2, 0.5),          # sampling range for generate
+CUBE_PARAMS = {
+    **PARAMS,
+    "res": Param(MESH_RESOLUTION_DOMAIN),
+    "cylinder_res": Param(MESH_RESOLUTION_SOURCE),
+    "D": Param(1 / 3, (0.2, 0.5)),   # default, then the sampling range used by generate
 }
 ```
+
+A parameter without a range (like `res`) can still be passed by hand to `run`, but cannot be varied by `generate`. A parameter useful to every simulation goes in `PARAMS` instead.
 
 The default is used whenever a dataset does not vary the parameter, so existing datasets stay reproducible.
 
 ## Step 2 — use it in `simulations/cube.py`
 
-`CubeSimulation.run(**params)` merges `PARAM_DEFAULTS` with what it receives (`resolve_params`), then reads each value. Read the new one and use it where the constant was used:
+`CubeSimulation.run(**params)` merges the defaults of `CUBE_PARAMS` with what it receives (`resolve_params`), then reads each value. Read the new one and use it where the constant was used:
 
 ```python
 p = cls.resolve_params(params)
@@ -33,7 +34,7 @@ Then replace `config.SOURCE_DIAMETER` by `diameter` in the heat-flux formula. If
 
 > ⚠ **Mesh changes are the dangerous case.** A different diameter generally produces a different number of nodes, which breaks the fixed-size `field` dataset type (`n_outputs = N_NODES`). Prefer parameters that do not touch the mesh (material properties, loads, boundary conditions, initial temperature). If you must change the mesh, give those datasets a new `mesh_id`, or use `pointwise`, and see [tutorial 4](04-add-a-dataset-type.md).
 >
-> The `graph` type is the one made for meshes that change from one simulation to the next: its parameters live in `SPONGE_PARAM_RANGES` (`simulations/config.py`) and its simulation in `simulations/sponge.py` (`SpongeSimulation`). `field` and `pointwise` only accept the parameters of `PARAM_RANGES` and refuse e.g. `r` or `res`.
+> The `graph` type is the one made for meshes that change from one simulation to the next: its parameters live in `SPONGE_PARAMS` (`simulations/config.py`) and its simulation in `simulations/sponge.py` (`SpongeSimulation`). `field` and `pointwise` only accept the parameters of `CUBE_PARAMS` and refuse e.g. `r` or `res`.
 
 ## Step 3 — generate and check
 

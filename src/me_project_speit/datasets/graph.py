@@ -72,7 +72,7 @@ class GraphDataset(Dataset):
         Connections of all simulations (local node indices, see module doc).
     """
 
-    param_ranges = config.SPONGE_PARAM_RANGES
+    params = config.SPONGE_PARAMS
     default_params = ("T0", "Phi0", "h", "r", "res")
     # Unit: simulations. One has ~80k edges and the GNN keeps several activations
     # per edge and per layer: a large batch overflows GPU memory (and can freeze the PC).
@@ -156,13 +156,12 @@ class GraphDataset(Dataset):
         rng = np.random.default_rng(seed)
         for _ in range(MAX_TRIES):
             params = {k: rng.uniform(*spec.input_ranges[k]) for k in spec.input_ranges}
-            for k in config.INTEGER_PARAMS & set(params):
-                params[k] = int(round(params[k]))
+            for k in params:
+                if config.SPONGE_PARAMS[k].integer:
+                    params[k] = int(round(params[k]))
             holes = rng.uniform(size=(int(rng.integers(1, config.MAX_HOLES + 1)), 3))
             face = int(rng.integers(0, len(config.FACES)))
-            result = SpongeSimulation.run(
-                holes, face, **{**config.SPONGE_PARAM_DEFAULTS, **params}
-            )
+            result = SpongeSimulation.run(holes, face, **params)
             if result is not None:
                 break
         else:
