@@ -3,16 +3,18 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 from . import __version__
 from .datasets import available_kinds
-from .parallel import default_workers
+from .utils import default_workers
 
 DEFAULT_DATA_DIR = Path("data")
 
 
-def build_parser() -> argparse.ArgumentParser:
+def build_parser(model: str | None = None) -> argparse.ArgumentParser:
+    """The parser; with ``model``, the options of ``train`` include those the model declares."""
     parser = argparse.ArgumentParser(
         prog="me-project-speit",
         description="Learn temperature fields from finite-element simulations.",
@@ -54,7 +56,6 @@ def build_parser() -> argparse.ArgumentParser:
     tr.add_argument("--dataset", required=True, help="CSV path or name of a CSV in --data-dir")
     tr.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
     tr.add_argument("--model", default="mlp", help="registered model name (see 'list models')")
-    tr.add_argument("--hidden", type=int, nargs="+", default=None, help="hidden layer sizes (mlp)")
     tr.add_argument("--epochs", type=int, default=300)
     tr.add_argument("--batch-size", type=int, default=None,
                     help="rows per batch (simulations per batch for graph datasets); default depends on the dataset kind")
@@ -63,6 +64,8 @@ def build_parser() -> argparse.ArgumentParser:
     tr.add_argument("--seed", type=int, default=42)
     tr.add_argument("--device", choices=["auto", "cuda", "cpu"], default="auto")
     tr.add_argument("--output-dir", type=Path, default=None)
+    if model is not None:
+        _add_model_options(tr, model)
 
     show = sub.add_parser("show", help="plot stored simulations in 3D")
     show.add_argument("--dataset", default="data_test", help="CSV path or name in --data-dir")
@@ -80,6 +83,49 @@ def build_parser() -> argparse.ArgumentParser:
     ls.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
 
     return parser
+
+
+def _add_model_options(train_parser: argparse.ArgumentParser, model: str) -> None:
+    """Add the options a model declares in ``add_cli_arguments`` to ``train``."""
+    from .models import get_model_class
+
+    try:
+        model_class = get_model_class(model)
+    except ValueError:
+        return  # unknown model: train() reports it, listing the available ones
+    group = train_parser.add_argument_group(f"{model} options")
+    try:
+        model_class.add_cli_arguments(group)
+        model_class.add_fit_arguments(group)
+    except argparse.ArgumentError as exc:
+        sys.exit(f"error: the options of model '{model}' clash with those of 'train': {exc}")
+    _show_defaults(model_class, group)
+
+
+def _show_defaults(model_class, group) -> None:
+    """Append "(default: ...)" to the help of each model option, read from the signatures.
+
+    The options themselves default to ``None`` ("not given"); the real default is
+    the one of the constructor or of ``fit``/``_fit_loop``, found here.
+    """
+    import inspect
+
+    sources = [model_class.__init__, model_class.fit, model_class._fit_loop]
+    for action in group._group_actions:
+        for source in sources:
+            parameter = inspect.signature(source).parameters.get(action.dest)
+            if parameter is not None and parameter.default is not inspect.Parameter.empty:
+                value = parameter.default
+                text = " ".join(map(str, value)) if isinstance(value, (list, tuple)) else str(value)
+                action.help = f"{action.help or ''} (default: {text.replace('%', '%%')})".strip()
+                break
+
+
+def _requested_model(argv: list[str]) -> str:
+    """Value of ``--model`` in ``argv`` (default ``mlp``), read before the full parse."""
+    peek = argparse.ArgumentParser(add_help=False)
+    peek.add_argument("--model", default="mlp")
+    return peek.parse_known_args(argv)[0].model
 
 
 def _list(what: str, data_dir: Path) -> None:
@@ -102,7 +148,9 @@ def _list(what: str, data_dir: Path) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = build_parser()
+    argv = sys.argv[1:] if argv is None else list(argv)
+    # The options of `train` depend on the model, which is itself an option.
+    parser = build_parser(_requested_model(argv) if argv[:1] == ["train"] else None)
     args = parser.parse_args(argv)
 
     # Heavy imports are deferred so each command only needs its own dependencies.
@@ -118,14 +166,16 @@ def main(argv: list[str] | None = None) -> None:
             parser.error(str(exc))
 
     elif args.command == "train":
-        from .models import IncompatibleError
+        from .models import IncompatibleError, get_model_class
         from .training import TrainConfig, train
 
         try:
+            model_class = get_model_class(args.model)  # unknown name: ValueError listing the models
             cfg = TrainConfig(
                 dataset=args.dataset,
                 model=args.model,
-                model_kwargs={"hidden": args.hidden} if args.hidden else {},
+                model_kwargs=model_class.kwargs_from_cli(args),
+                fit_kwargs=model_class.fit_kwargs_from_cli(args),
                 data_dir=args.data_dir,
                 epochs=args.epochs,
                 batch_size=args.batch_size,
@@ -149,7 +199,8 @@ def main(argv: list[str] | None = None) -> None:
             parser.exit(2, f"error: {exc}\n")
 
     elif args.command == "plot":
-        from .plotting import latest_run, plot_run
+        from .plotting import plot_run
+        from .utils import latest_run
 
         try:
             run = args.run or latest_run()

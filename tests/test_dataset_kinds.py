@@ -46,6 +46,12 @@ class ToySeriesModel(SurrogateModel):
     def __init__(self, n_inputs, n_outputs):
         super().__init__()
 
+    def forward(self, x):
+        return x
+
+    def fit(self, train_loader, val_loader, **kwargs):
+        return 0
+
 
 def test_new_kind_is_registered_and_listed():
     assert "toy_series" in available_kinds()

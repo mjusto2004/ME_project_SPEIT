@@ -40,6 +40,12 @@ class FixedMeshModel(SurrogateModel):
     def __init__(self, n_inputs, n_outputs):
         super().__init__()
 
+    def forward(self, x):
+        return x
+
+    def fit(self, train_loader, val_loader, **kwargs):
+        return 0
+
     @classmethod
     def check_compatible(cls, spec):
         if spec.mesh_id != config.MESH_ID:
@@ -114,3 +120,13 @@ def test_list_and_resolve_datasets(tmp_path):
     with pytest.raises(FileNotFoundError, match="Available"):
         resolve_dataset("missing", tmp_path)
     assert json.loads((tmp_path / "ok.json").read_text())["n_outputs"] == 1
+
+
+def test_model_without_forward_or_fit_cannot_be_instantiated():
+    import pytest
+
+    class Incomplete(SurrogateModel):
+        pass
+
+    with pytest.raises(TypeError):
+        Incomplete()

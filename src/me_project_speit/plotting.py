@@ -11,14 +11,6 @@ import numpy as np
 import torch
 
 
-def latest_run(runs_dir: str | Path = "runs") -> Path:
-    """The most recently modified run folder in ``runs_dir``."""
-    runs = [p for p in Path(runs_dir).glob("*") if (p / "best_model.pt").exists()]
-    if not runs:
-        raise FileNotFoundError(f"No run (folder with best_model.pt) found in '{runs_dir}'.")
-    return max(runs, key=lambda p: (p / "best_model.pt").stat().st_mtime)
-
-
 def plot_run(
     run_dir: str | Path,
     sample: int = 0,

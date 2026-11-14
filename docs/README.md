@@ -37,10 +37,11 @@ Three ideas keep datasets and models interchangeable:
 | `datasets/base.py` | abstract `Dataset`, `DatasetSpec`, `@register_dataset`, `load_dataset`, `save_dataset`, `split_indices` |
 | `datasets/field.py`, `pointwise.py`, `graph.py` | the dataset types: `FieldDataset`, `PointwiseDataset`, `GraphDataset` (variable meshes + connections; the advanced example) |
 | `simulations/sponge.py` | `SpongeSimulation` (kind `graph`): cube with random spherical holes, `run(centers, face, **params)` |
-| `models/base.py` | `SurrogateModel`, `IncompatibleError` |
+| `models/base.py` | abstract `SurrogateModel` (children implement `forward` and `fit`; optional `add_cli_arguments` / `add_fit_arguments` expose model and training options to the CLI), `IncompatibleError` |
 | `models/registry.py` | `@register_model`, `build_model`, `check_compatible`, `compatible_models` |
 | `models/mlp.py` | `MLP` (field) and `CoordMLP` (pointwise) |
 | `models/gnn.py` | `GNN` (graph) |
+| `utils/` | generic helpers (leaf package, imports nothing from the project): `parallel_map`, `select_device`, `timestamp`, `latest_run`, `to_plain` |
 | `training.py` | `TrainConfig`, `train()` |
 | `inference.py` | `Predictor` |
 | `cli.py` | the `me-project-speit` command |

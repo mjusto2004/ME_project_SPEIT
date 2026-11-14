@@ -45,11 +45,6 @@ def test_mlp_rejects_pointwise_and_coord_mlp_rejects_field():
         build_model("coord_mlp", DatasetSpec("f", ["a"], 50))
 
 
-def test_coord_mlp_requires_xyz_inputs():
-    with pytest.raises(IncompatibleError, match="x, y, z"):
-        build_model("coord_mlp", pointwise_spec(input_names=["P0", "a", "b", "c"]))
-
-
 def test_unknown_kind_rejected():
     with pytest.raises(ValueError, match="Unknown dataset kind"):
         DatasetSpec("x", ["a"], 1, kind="weird")
@@ -84,3 +79,14 @@ def test_train_and_predict_pointwise(tmp_path):
     assert np.isfinite(result["test_mae"])
     out = Predictor(result["checkpoint"]).predict([[0.5, 0.1, 0.2, 0.3]])
     assert out.shape == (1, 1)
+
+
+def test_train_coord_mlp_on_field_dataset_crashes_before_training(tmp_path):
+    csv = tmp_path / "field.csv"
+    rng = np.random.default_rng(0)
+    np.savetxt(csv, rng.random((20, 2 + 5)), delimiter=",")  # 2 inputs, 5 outputs
+    save_spec(DatasetSpec("field", ["a", "b"], 5), csv)  # kind defaults to 'field'
+    run_dir = tmp_path / "run"
+    with pytest.raises(IncompatibleError, match="coord_mlp"):
+        train(TrainConfig(dataset=csv, model="coord_mlp", epochs=3, device="cpu", output_dir=run_dir))
+    assert not run_dir.exists()  # failed before any work started

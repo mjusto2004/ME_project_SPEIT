@@ -86,7 +86,10 @@ me-project-speit train --dataset data_test --model mlp --epochs 300 --device aut
 |--------|---------|-------------|
 | `--dataset` | *required* | CSV path, or name of a CSV in `--data-dir` |
 | `--model` | `mlp` | registered model (see `list models`) |
-| `--hidden` | `128 256 256` | hidden layer sizes (`mlp`) |
+| `--hidden` | `128 256 256` (`mlp`), `64` (`gnn`) | hidden layer sizes (`mlp`) / node state width (`gnn`) |
+| `--layers` | `4` | message-passing rounds (`gnn` only) |
+| `--weight-decay` | 0 | L2 penalty of the optimizer (`mlp`, `coord_mlp`, `gnn`) |
+| *model options* | | each model declares its own (`train --model <name> --help` lists them) |
 | `--epochs` | 300 | maximum number of epochs |
 | `--batch-size` | 64 | mini-batch size |
 | `--lr` | 1e-3 | Adam learning rate |

@@ -25,7 +25,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from ..simulations import config
-from ..parallel import parallel_map
+from ..utils import parallel_map
 from .base import Dataset, DatasetSpec, Split, register_dataset, save_spec, split_indices
 
 MAX_TRIES = 20  # redraws allowed per simulation when a random sponge is invalid
