@@ -33,11 +33,14 @@ class TrainConfig:
     seed: int = 42
     device: str = "auto"  # "auto", "cuda" or "cpu"
     output_dir: Path | None = None
+    test_dataset: Path | None = None  # extra test set (same mesh and inputs), e.g. independent runs
 
     def __post_init__(self):
         self.dataset = Path(self.dataset)
         if self.output_dir is not None:
             self.output_dir = Path(self.output_dir)
+        if self.test_dataset is not None:
+            self.test_dataset = Path(self.test_dataset)
         if (
             self.epochs < 1
             or (self.batch_size is not None and self.batch_size < 1)
@@ -47,6 +50,17 @@ class TrainConfig:
             raise ValueError("epochs, batch_size, patience and lr must be positive")
         if self.device not in ("auto", "cuda", "cpu"):
             raise ValueError("device must be 'auto', 'cuda' or 'cpu'")
+
+
+def _check_same_data(spec, other, name: str) -> None:
+    """The extra test set must have the same inputs and outputs as the training set."""
+    if (other.kind, other.input_names, other.n_outputs, other.mesh_id) != (
+        spec.kind, spec.input_names, spec.n_outputs, spec.mesh_id,
+    ):
+        raise ValueError(
+            f"Test dataset '{name}' does not match the training data: "
+            f"{other.describe()} vs {spec.describe()}"
+        )
 
 
 def train(cfg: TrainConfig) -> dict:
@@ -61,7 +75,8 @@ def train(cfg: TrainConfig) -> dict:
     -------
     dict
         ``best_epoch``, ``test_mse``, ``test_mae``, ``test_rmse``,
-        ``checkpoint`` and ``history`` paths.
+        ``checkpoint`` and ``history`` paths; plus ``independent_mse``,
+        ``independent_mae`` and ``independent_rmse`` when ``cfg.test_dataset`` is given.
     """
     # Fail fast, before any heavy work, if the pair is incompatible.
     cfg.dataset = resolve_dataset(cfg.dataset, cfg.data_dir)
@@ -103,6 +118,17 @@ def train(cfg: TrainConfig) -> dict:
     val_loader = make_loader(val_idx, False)
     test_loader = make_loader(test_idx, False)
 
+    # Optional independent test set, normalised with the training statistics.
+    extra_loader = extra = None
+    if cfg.test_dataset is not None:
+        extra_path = resolve_dataset(cfg.test_dataset, cfg.data_dir)
+        extra = load_dataset(extra_path)
+        _check_same_data(spec, extra.spec, extra_path.name)
+        extra_loader = extra.make_loader(
+            (extra.X - x_mean) / x_std, (extra.Y - y_mean) / y_std,
+            np.arange(len(extra.X)), batch_size, False, pin_memory=device.type == "cuda",
+        )
+
     # --- Model --------------------------------------------------------------
     model = build_model(cfg.model, spec, **cfg.model_kwargs).to(device)
     y_std_tensor = torch.as_tensor(y_std, device=device)
@@ -124,6 +150,8 @@ def train(cfg: TrainConfig) -> dict:
     print(f"  Simulations: {n} ({len(X)} rows)")
     print(f"  Split:       {data.count_simulations(train_idx)} train / "
           f"{data.count_simulations(val_idx)} validation / {data.count_simulations(test_idx)} test")
+    if extra is not None:
+        print(f"  Extra test:  {extra_path} ({len(extra)} simulations)")
     if n < 50:
         print("  Warning: dataset is too small for reliable evaluation.")
     print()
@@ -190,6 +218,12 @@ def train(cfg: TrainConfig) -> dict:
     print(f"Test MAE: {test_mae:.4f}")
     print(f"Test RMSE: {test_rmse:.4f}")
     print(f"Test normalized MSE: {test_mse:.5f}")
+    result = {}
+    if extra_loader is not None:
+        ind_mse, ind_mae, ind_rmse = model.evaluate(extra_loader, device, y_std_tensor)
+        print(f"Independent test MAE: {ind_mae:.4f}")
+        print(f"Independent test RMSE: {ind_rmse:.4f}")
+        result = {"independent_mse": ind_mse, "independent_mae": ind_mae, "independent_rmse": ind_rmse}
     print(f"Model saved to: {checkpoint_path}")
     print(f"History saved to: {history_path}")
 
@@ -200,4 +234,5 @@ def train(cfg: TrainConfig) -> dict:
         "test_rmse": test_rmse,
         "checkpoint": checkpoint_path,
         "history": history_path,
+        **result,
     }

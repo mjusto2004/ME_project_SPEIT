@@ -96,3 +96,33 @@ def test_fit_kwargs_reach_fit_and_are_saved(tmp_path):
     ckpt = torch.load(result["checkpoint"], weights_only=True)
     assert ckpt["fit_kwargs"] == {"weight_decay": 1e-3}
     assert ckpt["model_kwargs"] == {}
+
+
+@pytest.mark.parametrize("regressor", ["gp", "ridge"])
+def test_pod_trains_saves_and_predicts(tmp_path, regressor):
+    csv = make_csv(tmp_path / "toy.csv", n_inputs=2, n_outputs=30, n=50)
+    result = train(TrainConfig(dataset=csv, model="pod", model_kwargs={"n_modes": 3, "regressor": regressor},
+                               device="cpu", output_dir=tmp_path / "run"))
+    # Linear toy data: the POD surrogate is essentially exact.
+    assert result["test_mae"] < 0.05
+    predictor = Predictor(result["checkpoint"])  # buffers of varying size must reload
+    assert predictor.predict(np.zeros((4, 2))).shape == (4, 30)
+
+
+def test_pod_rejects_unknown_regressor():
+    spec = DatasetSpec("s", ["a", "b"], 10)
+    with pytest.raises(ValueError, match="regressor"):
+        build_model("pod", spec, regressor="nope")
+
+
+def test_extra_test_dataset(tmp_path):
+    csv = make_csv(tmp_path / "toy.csv", n=40)
+    other = make_csv(tmp_path / "other.csv", n=10, name="other")
+    result = train(TrainConfig(dataset=csv, epochs=2, device="cpu", output_dir=tmp_path / "run",
+                               test_dataset=other))
+    assert np.isfinite(result["independent_mae"])
+
+    bad = make_csv(tmp_path / "bad.csv", n_inputs=2, n=10, name="bad")
+    with pytest.raises(ValueError, match="does not match"):
+        train(TrainConfig(dataset=csv, epochs=2, device="cpu", output_dir=tmp_path / "run2",
+                          test_dataset=bad))

@@ -64,6 +64,9 @@ def build_parser(model: str | None = None) -> argparse.ArgumentParser:
     tr.add_argument("--seed", type=int, default=42)
     tr.add_argument("--device", choices=["auto", "cuda", "cpu"], default="auto")
     tr.add_argument("--output-dir", type=Path, default=None)
+    tr.add_argument("--test-dataset", default=None,
+                    help="extra test set (CSV path or name in --data-dir), e.g. independent runs; "
+                    "must have the same inputs and outputs as --dataset")
     if model is not None:
         _add_model_options(tr, model)
 
@@ -184,6 +187,7 @@ def main(argv: list[str] | None = None) -> None:
                 seed=args.seed,
                 device=args.device,
                 output_dir=args.output_dir,
+                test_dataset=args.test_dataset,
             )
             train(cfg)
         except (ValueError, FileNotFoundError, IncompatibleError) as exc:

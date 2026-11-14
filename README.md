@@ -28,7 +28,7 @@ Once trained, the network replaces a ~0.5 s simulation with a single forward pas
 │   │   ├── cube.py           CubeSimulation: cube with a cylindrical source (kinds field, pointwise)
 │   │   └── sponge.py         SpongeSimulation: cube with random spherical holes (kind graph)
 │   ├── datasets/             abstract Dataset + one subclass per dataset type (field.py, pointwise.py, graph.py)
-│   ├── models/               model registry + compatibility (base.py, registry.py, mlp.py, gnn.py)
+│   ├── models/               model registry + compatibility (base.py, registry.py, mlp.py, gnn.py, pod.py)
 │   ├── training.py           training loop, early stopping, evaluation
 │   ├── inference.py          Predictor: load a checkpoint and predict
 │   ├── visualization.py      3D plots of stored fields (needs EasyFEA)
@@ -88,6 +88,8 @@ me-project-speit train --dataset data_test --model mlp --epochs 300 --device aut
 | `--model` | `mlp` | registered model (see `list models`) |
 | `--hidden` | `128 256 256` (`mlp`), `64` (`gnn`) | hidden layer sizes (`mlp`) / node state width (`gnn`) |
 | `--layers` | `4` | message-passing rounds (`gnn` only) |
+| `--n-modes`, `--regressor`, `--degree` | `5`, `gp`, `3` | `pod` only: POD modes kept, regression of their coefficients (`gp` or `ridge`), polynomial degree (`ridge`) |
+| `--test-dataset` | | extra independent test set (same inputs and mesh); reports `Independent test MAE` |
 | `--weight-decay` | 0 | L2 penalty of the optimizer (`mlp`, `coord_mlp`, `gnn`) |
 | *model options* | | each model declares its own (`train --model <name> --help` lists them) |
 | `--epochs` | 300 | maximum number of epochs |
@@ -163,7 +165,7 @@ Each dataset type is a subclass of the abstract `Dataset` (`src/me_project_speit
 
 | Type (`kind`) | Class | Row | Inputs → output | Models |
 |---------------|-------|-----|-----------------|--------|
-| `field` (default) | `FieldDataset` | one per simulation | `T0, Phi0, h` → all 560 node temperatures | `mlp` |
+| `field` (default) | `FieldDataset` | one per simulation | `T0, Phi0, h` → all 560 node temperatures | `mlp`, `pod` |
 | `pointwise` | `PointwiseDataset` | one per (simulation, node) | `T0, Phi0, h, x, y, z` → temperature at that node | `coord_mlp` |
 | `graph` | `GraphDataset` | one per node; every simulation has its own mesh | `T0, Phi0, h, r, res, x, y, z, heated` + the node connections → temperature at that node | `gnn` |
 

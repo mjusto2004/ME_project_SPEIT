@@ -18,11 +18,13 @@ from .registry import (
 # Importing the modules registers the models.
 from .mlp import MLP, CoordMLP  # noqa: E402
 from .gnn import GNN  # noqa: E402
+from .pod import POD  # noqa: E402
 
 __all__ = [
     "MLP",
     "CoordMLP",
     "GNN",
+    "POD",
     "IncompatibleError",
     "SurrogateModel",
     "available_models",

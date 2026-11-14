@@ -12,7 +12,7 @@ Experiment 3 compares it with a POD + regression surrogate (`src/me_project_spei
 | Test set | Runs | Source |
 |---|---|---|
 | `data_test.csv` test split | 14 | 15 % test split of `data_test.csv` (seed 42) used by `train.py` |
-| Independent runs | 100 | `datasets/independent_test_100.npz`, new random runs (seed 2) |
+| Independent runs | 100 | `data/independent_100.csv`, new random runs (seed 2) |
 
 Inputs are sampled uniformly as in `data_generation.py`: T0 ∈ [146.5, 293] K,
 P ∈ [15 000, 30 000] W, h ∈ [150, 300] W·m⁻²·K⁻¹. Errors in °C.
@@ -30,7 +30,7 @@ The original 14 test runs stay held out; the new runs go 85 % to training, 15 % 
 | + 630 random | 720 | 0.0071 / 0.0098 | 0.0075 / 0.0116 |
 
 **Conclusion:** error drops up to 360 runs; 720 runs give no further gain.
-`datasets/data_test_extended_360.npz` is the adopted training set.
+`data/extended_360.csv` is the adopted training set.
 
 ## Experiment 2 — Sweep of h with 2 runs per h (rejected)
 
@@ -73,35 +73,38 @@ then a regressor (T0, P, h) → (c₁, …, c₅).
 projection limit (max error 1e-4 °C); it trains in seconds on CPU. Ridge is capped by its features
 and does not improve with more data.
 
-Run: `python train_pod.py --dataset src/me_project_speit/datasets/data_test.csv` (CSV only; the
-360-run results come from the same `PODRegressor` fit on the non-test rows of the `.npz`).
-Outputs in `runs/pod_<dataset>_<time>/`.
+Run: `me-project-speit train --dataset <name> --model pod --regressor gp` (options `--n-modes`,
+`--regressor {gp,ridge}`, `--degree`). The model is a registered `SurrogateModel`: checkpoint in
+`runs/<dataset>_<time>/`, usable with `Predictor` and `plot`. The tables above come from the
+original scripts (see the differences under *Reproduce*).
 
 ## Reproduce
 
-Code is in `src/me_project_speit/extended_dataset/`.
+The extended-dataset code was merged into the main pipeline. The training sets of these
+experiments are stored as ordinary datasets (CSV + JSON) in `data/` (git-ignored):
 
-| File | Role |
+| File | Content |
 |---|---|
-| `simulate.py` | Same physics as `simulation.py`, also returns the time history |
-| `generate.py` | Random runs in parallel, one `.npz` per run in `datasets/raw/extended_runs/` |
-| `build.py` | `data_test.csv` + N new runs → `data_test_extended_<total>.npz`, keeps the original test split |
-| `train.py` | Same MLP and loop as the baseline `train.py`, uses the split saved in the `.npz` |
-| `compare.py` | Scores several checkpoints on both test sets |
-
-Full pipeline on a Slurm cluster (set the paths in the script first):
+| `data/extended_360.csv` | 360-run training set (the 90 runs of `data_test.csv` + 270 random) |
+| `data/independent_100.csv` | 100 independent test runs |
 
 ```
-sbatch scripts/slurm/extended_dataset.sbatch
+me-project-speit generate -n 270 --seed 1
+me-project-speit train --dataset extended_360 --model mlp --test-dataset independent_100
+me-project-speit train --dataset extended_360 --model pod --regressor gp --test-dataset independent_100
 ```
 
-| Output | Content |
-|---|---|
-| `datasets/data_test_extended_360.npz` | Training set (X, T_final, split) |
-| `datasets/independent_test_100.npz` | Independent test set (X, T_final) |
-| `datasets/raw/extended_runs/` | One file per run: inputs, final field, time history, mesh (git-ignored) |
-| `runs/mlp_trained_on_<dataset>_<time>/` | `best_model.pt`, `history.csv` |
-| `runs/comparison_<time>.csv` | Results table |
+`--test-dataset` scores the trained model on a second, independent dataset (same inputs and
+mesh) and prints `Independent test MAE / RMSE`, so models and training sizes are compared on
+the same data. It replaces the former `compare.py`.
+
+Differences with the original scripts: the split is the standard 70/15/15 split of `train`
+(the 14 original test runs are no longer kept apart; use the independent set to compare), the POD
+ridge regressor uses polynomial features of the normalised inputs instead of the hand-written
+physics features (`P/h`, `1/h`... are not usable on normalised inputs; it is clearly less accurate,
+use `gp`), and the POD fit uses the training split only (validation is reported, not fitted).
+The ranges of these two datasets (T0 146-293 K, P 15 000-30 000) differ from the current
+`simulations/config.py`.
 
 ## Open issue — node numbering of `coord.npy`
 
@@ -111,5 +114,5 @@ sbatch scripts/slurm/extended_dataset.sbatch
 | **Presumed cause** | Node numbering depends on machine/version: `data_test.csv` = Linux (EasyFEA 7.2.0), `coord.npy` = macOS (EasyFEA 7.1.0). |
 | **Affected** | `datasets/observe.py` (wrong node positions in plots); future models using `coord.npy` (e.g. CNN on an interpolated grid). |
 | **Not affected** | Training results above (all generated on Linux, same numbering as `data_test.csv`). |
-| **In place** | `extended_dataset/build.py` checks node order before combining. |
+| **In place** | `show` refuses to plot a dataset whose mesh does not match `coord.npy`. The reordering code of `extended_dataset/build.py` was removed in the merge (see git history). |
 | **Proposed fix** | Replace `coord.npy` with coordinates matching `data_test.csv`; align nodes by coordinates in `observe.py`. |
