@@ -1,6 +1,6 @@
 # New-range runs
 
-Datasets are not in git. They are deterministic: same seed + same code + same `uv.lock` = identical files.
+Datasets are not in git.
 
 Regenerate from the repository root:
 
