@@ -34,14 +34,14 @@ def make_pointwise_csv(path, n_sims=20):
 
 def test_models_are_filtered_by_dataset_kind():
     field = DatasetSpec("f", ["a", "b"], 50)
-    assert compatible_models(field) == ["mlp"]
+    assert compatible_models(field) == ["mlp", "pod"]
     assert compatible_models(pointwise_spec()) == ["coord_mlp"]
 
 
 def test_mlp_rejects_pointwise_and_coord_mlp_rejects_field():
     with pytest.raises(IncompatibleError, match="FieldDataset"):
         build_model("mlp", pointwise_spec())
-    with pytest.raises(IncompatibleError, match=r"Compatible models: \['mlp'\]"):
+    with pytest.raises(IncompatibleError, match=r"Compatible models: \['mlp', 'pod'\]"):
         build_model("coord_mlp", DatasetSpec("f", ["a"], 50))
 
 

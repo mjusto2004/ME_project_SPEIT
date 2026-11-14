@@ -78,6 +78,13 @@ class SurrogateModel(nn.Module, ABC):
         :meth:`_fit_loop`.
         """
 
+    def set_scaling(self, x_mean, x_std, y_mean, y_std) -> None:
+        """Called by ``train`` before :meth:`fit` with the normalisation statistics.
+
+        Does nothing by default. Override it when the model must work on raw
+        (physical) values instead of the normalised ones the loaders give.
+        """
+
     def evaluate(self, loader: DataLoader, device: torch.device, y_std: torch.Tensor):
         """Normalized MSE and real-unit MAE / RMSE over ``loader``."""
         self.eval()
