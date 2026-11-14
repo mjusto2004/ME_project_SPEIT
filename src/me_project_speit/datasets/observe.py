@@ -5,17 +5,14 @@ from pathlib import Path
 from EasyFEA import Models, ElemType, Simulations, PyVista
 from EasyFEA.Geoms import Circle, Domain, Point
 
-folder = Path(__file__).resolve().parent
-data = np.loadtxt(folder / "data_test.csv", delimiter=",")
-coord = np.load(folder / "coord.npy")
+folder = Path(__file__).resolve().parents[3] / "data" / "new_ranges"
+data = np.loadtxt(folder / "dataset_20261114_180558_100.csv", delimiter=",")
 X, Y = data[:, :3], data[:, 3:]
 
 a = 1
 domain = Domain(Point(0, 0), Point(a, a), a / 8)
 circle = Circle(Point(a / 2, a / 2), diam=a / 3., meshSize=a / 10)
 mesh = domain.Mesh_Extrude([circle], [0, 0, a], [4], ElemType.TETRA4)
-
-assert np.allclose(mesh.coord, coord), "le maillage ne correspond pas à coord.npy"
 
 simu = Simulations.Thermal(mesh, Models.Thermal(k=237, c=896, thickness=1))
 

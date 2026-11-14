@@ -1,7 +1,7 @@
 [project]
 name = "me-project-speit"
 version = "0.1.0"
-description = "Add your description here"
+description = "Deep-learning surrogate model predicting transient 3D temperature fields from finite-element simulations."
 readme = "README.md"
 authors = [
     { name = "msenart", email = "mathieu.senart@gmail.com" }
@@ -16,8 +16,25 @@ dependencies = [
 ]
 
 [project.scripts]
-me-project-speit = "me_project_speit:main"
+me-project-speit = "me_project_speit.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.12.17,<0.13.0"]
 build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+# --- GPU support -------------------------------------------------------------
+# On Windows (the development PC, RTX 5070 / Blackwell, driver CUDA 13.3) torch
+# is taken from the CUDA 13.2 wheel index instead of PyPI's CPU-only build.
+# Other platforms (e.g. the Linux Slurm cluster) are unaffected and keep PyPI.
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cu132", marker = "sys_platform == 'win32'" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cu132"
+url = "https://download.pytorch.org/whl/cu132"
+explicit = true
