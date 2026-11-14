@@ -7,7 +7,13 @@ authors = [
     { name = "msenart", email = "mathieu.senart@gmail.com" }
 ]
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "easyfea>=7.3.0",
+    "matplotlib>=3.11.2",
+    "numpy>=2.5.4",
+    "scikit-learn>=1.9.1",
+    "torch>=2.15.0",
+]
 
 [project.scripts]
 me-project-speit = "me_project_speit:main"
