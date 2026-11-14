@@ -10,6 +10,7 @@ requires-python = ">=3.12"
 dependencies = [
     "numpy",
     "torch",
+    "tqdm>=4.70.1",
 ]
 
 [project.optional-dependencies]

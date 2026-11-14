@@ -5,7 +5,7 @@ import math
 import numpy as np
 import pytest
 
-from me_project_speit.parallel import default_workers, parallel_map
+from me_project_speit.utils import default_workers, parallel_map
 
 
 def test_parallel_map_keeps_the_order():

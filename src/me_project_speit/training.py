@@ -1,19 +1,20 @@
-"""Training and evaluation of the MLP surrogate model."""
+"""Training run orchestration: data, split, normalisation, checkpoint, final test.
+
+The training loop itself belongs to the model (:meth:`SurrogateModel.fit`).
+"""
 
 from __future__ import annotations
 
 import csv
-import math
 from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
 
 import numpy as np
 import torch
-from torch import nn
 
 from .datasets import DEFAULT_DATA_DIR, load_dataset, load_spec, resolve_dataset
 from .models import build_model, check_compatible
+from .utils import select_device, timestamp, to_plain
 
 
 @dataclass
@@ -22,7 +23,8 @@ class TrainConfig:
 
     dataset: Path  # path, or bare name of a CSV in ``data_dir``
     model: str = "mlp"
-    model_kwargs: dict = field(default_factory=dict)  # e.g. {"hidden": [64, 64]}
+    model_kwargs: dict = field(default_factory=dict)  # constructor arguments, e.g. {"hidden": [64, 64]}
+    fit_kwargs: dict = field(default_factory=dict)  # model-specific options of fit(), e.g. {"weight_decay": 1e-4}
     data_dir: Path = DEFAULT_DATA_DIR
     epochs: int = 300
     batch_size: int | None = None  # None: the dataset kind's default
@@ -47,41 +49,6 @@ class TrainConfig:
             raise ValueError("device must be 'auto', 'cuda' or 'cpu'")
 
 
-def select_device(name: str) -> torch.device:
-    """Resolve ``"auto" | "cuda" | "cpu"`` to a :class:`torch.device`."""
-    if name == "cuda" and not torch.cuda.is_available():
-        raise RuntimeError("CUDA is unavailable. Request a GPU through Slurm.")
-    use_cuda = name == "cuda" or (name == "auto" and torch.cuda.is_available())
-    return torch.device("cuda" if use_cuda else "cpu")
-
-
-def evaluate(model, loader, device, y_std):
-    """Compute the normalized MSE and the real-unit MAE / RMSE.
-
-    ``y_std`` converts normalized differences back to degrees.
-    """
-    model.eval()
-
-    sq_norm = abs_real = sq_real = 0.0
-    count = 0
-
-    with torch.no_grad():
-        for batch in loader:
-            *inputs, yb = batch  # the last element is the target
-            inputs = [t.to(device, non_blocking=True) for t in inputs]
-            yb = yb.to(device, non_blocking=True)
-
-            difference = model(*inputs) - yb
-            real_difference = difference * y_std
-
-            sq_norm += difference.square().sum().item()
-            abs_real += real_difference.abs().sum().item()
-            sq_real += real_difference.square().sum().item()
-            count += yb.numel()
-
-    return sq_norm / count, abs_real / count, math.sqrt(sq_real / count)
-
-
 def train(cfg: TrainConfig) -> dict:
     """Train the model ``cfg.model`` on ``cfg.dataset`` and save the best checkpoint.
 
@@ -104,20 +71,14 @@ def train(cfg: TrainConfig) -> dict:
     np.random.seed(cfg.seed)
 
     device = select_device(cfg.device)
-    print(f"Device: {device}")
-    if device.type == "cuda":
-        print(f"GPU: {torch.cuda.get_device_name(0)}")
 
     # --- Data ---------------------------------------------------------------
     data = load_dataset(cfg.dataset)
     spec = data.spec
     X, Y = data.X, data.Y
     n = len(data)  # number of simulations
-    if n < 50:
-        print("Warning: dataset is too small for reliable evaluation.")
 
     batch_size = cfg.batch_size or data.default_batch_size
-    print(f"Batch size: {batch_size}")
 
     split = data.split(cfg.seed)
     train_idx, val_idx, test_idx = split.train, split.val, split.test
@@ -144,114 +105,86 @@ def train(cfg: TrainConfig) -> dict:
 
     # --- Model --------------------------------------------------------------
     model = build_model(cfg.model, spec, **cfg.model_kwargs).to(device)
-    criterion = nn.MSELoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=cfg.lr)
     y_std_tensor = torch.as_tensor(y_std, device=device)
 
     run_dir = cfg.output_dir or (
-        Path("runs") / f"{cfg.dataset.stem}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        Path("runs") / f"{cfg.dataset.stem}_{timestamp()}"
     )
     run_dir.mkdir(parents=True, exist_ok=True)
     checkpoint_path = run_dir / "best_model.pt"
     history_path = run_dir / "history.csv"
 
-    print(f"Model: {cfg.model} {cfg.model_kwargs or ''}")
-    print(f"Dataset: {cfg.dataset} ({spec.describe()})")
-    print(f"Simulations: {n} ({len(X)} rows)")
-    print(f"Train: {data.count_simulations(train_idx)}")
-    print(f"Validation: {data.count_simulations(val_idx)}")
-    print(f"Test: {data.count_simulations(test_idx)}")
+    # --- Summary: general, then model, then training ------------------------
+    device_name = f"{device} ({torch.cuda.get_device_name(0)})" if device.type == "cuda" else str(device)
+    print(f"Model:  {cfg.model}")
+    print(f"Device:  {device_name}")
+    print()
+    print("Data")
+    print(f"  Dataset:     {cfg.dataset} ({spec.describe()})")
+    print(f"  Simulations: {n} ({len(X)} rows)")
+    print(f"  Split:       {data.count_simulations(train_idx)} train / "
+          f"{data.count_simulations(val_idx)} validation / {data.count_simulations(test_idx)} test")
+    if n < 50:
+        print("  Warning: dataset is too small for reliable evaluation.")
+    print()
+    print("Model")
+    print(f"  Options:     {cfg.model_kwargs or 'defaults'}")
+    print(f"  Parameters:  {sum(p.numel() for p in model.parameters()):,}")
+    print()
+    print("Training")
+    print(f"  Epochs:      {cfg.epochs} (patience {cfg.patience})")
+    print(f"  Batch size:  {batch_size}")
+    print(f"  LR:          {cfg.lr}")
+    print(f"  Seed:        {cfg.seed}")
+    print(f"  Options:     {cfg.fit_kwargs or 'defaults'}")
+    print()
 
-    # --- Training loop ------------------------------------------------------
-    best_val_mse = float("inf")
-    best_epoch = 0
-    epochs_without_improvement = 0
+    # --- Training (the model owns its loop) ---------------------------------
+    def save_checkpoint(epoch: int) -> None:
+        torch.save(
+            {
+                "model_state_dict": {
+                    k: v.detach().cpu().clone() for k, v in model.state_dict().items()
+                },
+                "model_name": cfg.model,
+                "model_kwargs": to_plain(cfg.model_kwargs),
+                "fit_kwargs": to_plain(cfg.fit_kwargs),
+                "spec": spec.to_dict(),
+                "x_mean": torch.from_numpy(x_mean.copy()),
+                "x_std": torch.from_numpy(x_std.copy()),
+                "y_mean": torch.from_numpy(y_mean.copy()),
+                "y_std": torch.from_numpy(y_std.copy()),
+                "dataset": str(cfg.dataset.resolve()),
+                "seed": cfg.seed,
+                "train_indices": torch.as_tensor(train_idx.copy()),
+                "val_indices": torch.as_tensor(val_idx.copy()),
+                "test_indices": torch.as_tensor(test_idx.copy()),
+                "epoch": epoch,
+            },
+            checkpoint_path,
+        )
 
     with history_path.open("w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(
-            ["epoch", "train_mse_scaled", "val_mse_scaled", "val_mae", "val_rmse"]
-        )
+        writer.writerow(["epoch", "train_mse_scaled", "val_mse_scaled", "val_mae", "val_rmse"])
 
-        for epoch in range(1, cfg.epochs + 1):
-            model.train()
-            train_sum = 0.0
-            train_elements = 0
-
-            for batch in train_loader:
-                *inputs, yb = batch  # the last element is the target
-                inputs = [t.to(device, non_blocking=True) for t in inputs]
-                yb = yb.to(device, non_blocking=True)
-
-                optimizer.zero_grad()
-                loss = criterion(model(*inputs), yb)
-                loss.backward()
-                optimizer.step()
-
-                train_sum += loss.item() * yb.numel()
-                train_elements += yb.numel()
-
-            train_mse = train_sum / train_elements
-            val_mse, val_mae, val_rmse = evaluate(model, val_loader, device, y_std_tensor)
-
-            if not math.isfinite(val_mse):
-                raise RuntimeError("Non-finite validation loss.")
-
-            writer.writerow([epoch, train_mse, val_mse, val_mae, val_rmse])
+        def log_epoch(*row) -> None:
+            writer.writerow(row)
             f.flush()
 
-            if val_mse < best_val_mse:
-                best_val_mse = val_mse
-                best_epoch = epoch
-                epochs_without_improvement = 0
-                torch.save(
-                    {
-                        "model_state_dict": {
-                            k: v.detach().cpu().clone()
-                            for k, v in model.state_dict().items()
-                        },
-                        "model_name": cfg.model,
-                        "model_kwargs": _plain(cfg.model_kwargs),
-                        "spec": spec.to_dict(),
-                        "x_mean": torch.from_numpy(x_mean.copy()),
-                        "x_std": torch.from_numpy(x_std.copy()),
-                        "y_mean": torch.from_numpy(y_mean.copy()),
-                        "y_std": torch.from_numpy(y_std.copy()),
-                        "dataset": str(cfg.dataset.resolve()),
-                        "seed": cfg.seed,
-                        "train_indices": torch.as_tensor(train_idx.copy()),
-                        "val_indices": torch.as_tensor(val_idx.copy()),
-                        "test_indices": torch.as_tensor(test_idx.copy()),
-                        "epoch": epoch,
-                    },
-                    checkpoint_path,
-                )
-            else:
-                epochs_without_improvement += 1
-
-            if (
-                epoch == 1
-                or epoch % 10 == 0
-                or epochs_without_improvement >= cfg.patience
-            ):
-                print(
-                    f"Epoch {epoch:3d} | "
-                    f"Train MSE: {train_mse:.5f} | "
-                    f"Val MSE: {val_mse:.5f} | "
-                    f"Val MAE: {val_mae:.3f}",
-                    flush=True,
-                )
-
-            if epochs_without_improvement >= cfg.patience:
-                print(f"Early stopping at epoch {epoch}")
-                break
+        best_epoch = model.fit(
+            train_loader, val_loader,
+            epochs=cfg.epochs, lr=cfg.lr, patience=cfg.patience,
+            device=device, y_std=y_std_tensor,
+            on_epoch=log_epoch, on_best=save_checkpoint, **cfg.fit_kwargs,
+        )
 
     # --- Final test evaluation with the best checkpoint ---------------------
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
     model.load_state_dict(checkpoint["model_state_dict"])
     model.to(device)
 
-    test_mse, test_mae, test_rmse = evaluate(model, test_loader, device, y_std_tensor)
+    test_mse, test_mae, test_rmse = model.evaluate(test_loader, device, y_std_tensor)
 
     print(f"Best epoch: {best_epoch}")
     print(f"Test MAE: {test_mae:.4f}")
@@ -268,12 +201,3 @@ def train(cfg: TrainConfig) -> dict:
         "checkpoint": checkpoint_path,
         "history": history_path,
     }
-
-
-def _plain(obj):
-    """Convert tuples to lists so checkpoints load with ``weights_only=True``."""
-    if isinstance(obj, dict):
-        return {k: _plain(v) for k, v in obj.items()}
-    if isinstance(obj, (list, tuple)):
-        return [_plain(v) for v in obj]
-    return obj

@@ -80,3 +80,19 @@ def test_dataset_resolved_by_name(tmp_path):
 def test_train_config_validation():
     with pytest.raises(ValueError):
         TrainConfig(dataset="x.csv", epochs=0)
+
+
+def test_fit_kwargs_reach_fit_and_are_saved(tmp_path):
+    import torch
+
+    csv = tmp_path / "d.csv"
+    rng = np.random.default_rng(0)
+    np.savetxt(csv, rng.random((60, 2 + 4)), delimiter=",")
+    from me_project_speit.datasets import DatasetSpec, save_spec
+
+    save_spec(DatasetSpec("d", ["a", "b"], 4), csv)
+    result = train(TrainConfig(dataset=csv, epochs=2, device="cpu", output_dir=tmp_path / "run",
+                               fit_kwargs={"weight_decay": 1e-3}))
+    ckpt = torch.load(result["checkpoint"], weights_only=True)
+    assert ckpt["fit_kwargs"] == {"weight_decay": 1e-3}
+    assert ckpt["model_kwargs"] == {}

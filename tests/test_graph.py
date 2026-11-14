@@ -141,7 +141,8 @@ def test_train_and_predict_on_graphs(tmp_path):
 
 def test_plot_run_writes_figures(tmp_path):
     pytest.importorskip("matplotlib")
-    from me_project_speit.plotting import latest_run, plot_run
+    from me_project_speit.plotting import plot_run
+    from me_project_speit.utils import latest_run
 
     # coordinates of the synthetic graphs must be named x, y, z for the mesh plot
     ds = make_graph_dataset()

@@ -13,7 +13,6 @@ compatibility checks with models are inherited.
 
 from __future__ import annotations
 
-import datetime
 import json
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, field
@@ -25,7 +24,7 @@ import torch
 from torch.utils.data import DataLoader, TensorDataset
 
 from ..simulations import config
-from ..parallel import parallel_map
+from ..utils import parallel_map, timestamp
 
 DEFAULT_DATA_DIR = Path("data")
 
@@ -420,7 +419,7 @@ def save_dataset(
 
     ``input_names=None`` varies the default parameters of the kind.
     """
-    stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    stamp = timestamp()
     stem = f"dataset_{stamp}_{n}"
     dataset_class = get_dataset_class(kind)
     input_names = input_names or dataset_class.default_params

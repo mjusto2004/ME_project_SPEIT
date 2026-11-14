@@ -51,6 +51,15 @@ class GNN(SurrogateModel):
         self.update = nn.ModuleList(_mlp(2 * width, width) for _ in range(layers))
         self.head = nn.Linear(width, n_outputs)
 
+    @classmethod
+    def add_cli_arguments(cls, parser):
+        parser.add_argument("--hidden", type=int, help="width of the node states")
+        parser.add_argument("--layers", type=int, help="number of message-passing rounds")
+
+    @classmethod
+    def add_fit_arguments(cls, parser):
+        parser.add_argument("--weight-decay", type=float, help="L2 penalty of the optimizer")
+
     def forward(self, x: torch.Tensor, edge_index: torch.Tensor) -> torch.Tensor:
         """``x``: (n_nodes, n_inputs); ``edge_index``: (2, n_edges) with rows (src, dst)."""
         src, dst = edge_index
@@ -65,3 +74,6 @@ class GNN(SurrogateModel):
             mean = torch.zeros_like(h).index_add_(0, dst, m) / degree[:, None]
             h = h + update(torch.cat([h, mean], dim=1))
         return self.head(h)
+
+    def fit(self, train_loader, val_loader, **kwargs):
+        return self._fit_loop(train_loader, val_loader, **kwargs)
