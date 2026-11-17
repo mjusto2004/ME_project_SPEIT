@@ -287,18 +287,54 @@ def _short(ids: list[int], n: int = 10) -> str:
 # --------------------------------------------------------------------------
 # Figures
 # --------------------------------------------------------------------------
+def use_pyvista(viewer: str, results) -> bool:
+    """Resolve ``viewer`` (``auto``, ``pyvista``, ``matplotlib``) for these results."""
+    from .viewer import available
+
+    if viewer not in ("auto", "pyvista", "matplotlib"):
+        raise ValueError("viewer must be 'auto', 'pyvista' or 'matplotlib'")
+    has_coords = all(r.coords is not None for r in results)
+    if viewer == "pyvista":
+        if not available():
+            raise ValueError("The pyvista viewer needs PyVista: pip install pyvista (or use --viewer matplotlib).")
+        if not has_coords:
+            raise ValueError("No node coordinates for this dataset: use --viewer matplotlib.")
+        return True
+    return viewer == "auto" and has_coords and available()
+
+
+def show_figures(plt, window=None) -> None:
+    """Show the PyVista window first (if any), then the matplotlib figures."""
+    if window is not None:
+        from .viewer import HELP
+
+        print(f"3D view: {HELP}")
+        if plt.get_fignums():
+            print("Close the 3D window to see the other figures.")
+        window.show()
+    if plt.get_fignums():
+        plt.show()
+
+
 def plot_evaluation(
     ev: Evaluation,
     sim: int | None = None,
     half: bool = False,
     save: str | Path | None = None,
+    viewer: str = "auto",
 ) -> list[Path]:
-    """One figure: 3D true / predicted / error of simulation ``sim`` (default: the worst),
-    then predicted vs true, the error histogram and the MAE of every simulation.
+    """3D true / predicted / error of simulation ``sim`` (default: the worst), then
+    predicted vs true, the error histogram and the MAE of every simulation.
 
-    ``half`` keeps only the nodes with y <= 0.5 to see inside. With ``save``, the
-    figure is written to ``<save>_inference.png`` instead of being shown.
-    Returns the saved files.
+    ``viewer``: ``pyvista`` draws the 3D part in an interactive PyVista window
+    (smooth rotation, cutting plane, arrow keys to go through the simulations from
+    the worst to the best); ``matplotlib`` draws everything in one matplotlib
+    figure; ``auto`` (default) takes PyVista when it is installed and the nodes
+    have coordinates. ``half`` starts with only the nodes with y <= 0.5 shown.
+
+    With ``save``, nothing is shown: the matplotlib figure is written to
+    ``<save>_inference.png`` and, with PyVista, the 3D view to
+    ``<save>_inference_3d.png``. Returns the saved files.
     """
     import matplotlib
 
@@ -306,23 +342,47 @@ def plot_evaluation(
         matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    fig = draw_evaluation(plt, ev, ev.worst() if sim is None else ev.get(sim), half)
+    chosen = ev.worst() if sim is None else ev.get(sim)
+    window = None
+    if use_pyvista(viewer, ev.results):
+        from .viewer import PredictionViewer
+
+        ranked = sorted(ev.results, key=lambda r: r.mae, reverse=True)
+        window = PredictionViewer(
+            ranked, index=ranked.index(chosen), half=half, off_screen=save is not None,
+            label=lambda i, r: f"simulation {r.sim} (MAE rank {i + 1})",
+            title=f"{ev.checkpoint.parent.name} on {ev.dataset.stem}",
+        )
+    fig = draw_evaluation(plt, ev, chosen, half, three_d=window is None or save is not None)
     if save is None:
-        plt.show()
+        show_figures(plt, window)
         return []
     path = Path(f"{save}_inference.png")
     path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(path, dpi=130, bbox_inches="tight")
-    return [path]
+    saved = [path]
+    if window is not None:
+        saved.append(window.screenshot(f"{save}_inference_3d.png"))
+    return saved
 
 
-def draw_evaluation(plt, ev: Evaluation, chosen: SimulationResult, half: bool = False, label: str | None = None):
-    """Build the figure of :func:`plot_evaluation` (``label`` names ``chosen`` in the title)."""
-    fig = plt.figure(figsize=(15, 8))
+def draw_evaluation(
+    plt, ev: Evaluation, chosen: SimulationResult, half: bool = False, label: str | None = None,
+    three_d: bool = True,
+):
+    """Build the figure of :func:`plot_evaluation` (``label`` names ``chosen`` in the title).
+
+    ``three_d=False`` leaves out the view of ``chosen`` (drawn by the PyVista viewer):
+    only the three panels over all simulations remain.
+    """
+    fig = plt.figure(figsize=(15, 8) if three_d else (15, 4.6))
     label = label or f"simulation {chosen.sim}"
+    rows, first = (2, 4) if three_d else (1, 1)  # grid rows, position of the first panel over all simulations
 
     # --- one simulation: true, predicted, error ------------------------------
-    if chosen.coords is not None:
+    if not three_d:
+        pass
+    elif chosen.coords is not None:
         xyz = chosen.coords
         shown = xyz[:, 1] <= 0.5 if half else np.ones(len(xyz), bool)
         lo = min(chosen.true.min(), chosen.pred.min())  # shared scale: a biased prediction shows
@@ -345,18 +405,19 @@ def draw_evaluation(plt, ev: Evaluation, chosen: SimulationResult, half: bool = 
         ax.plot(chosen.pred, label="predicted", alpha=0.8)
         ax.set(xlabel="output index (no node coordinates for this mesh)", ylabel="temperature (°C)")
         ax.legend()
-    params = ", ".join(f"{k}={v:.4g}" for k, v in chosen.params.items())
-    fig.text(
-        0.5, 0.95,
-        f"{label} ({params}): {len(chosen.true)} nodes, MAE {chosen.mae:.3f} °C, "
-        f"max {chosen.max_abs:.3f} °C" + (" (cut at y=0.5)" if half else ""),
-        ha="center", fontsize=11,
-    )
+    if three_d:
+        params = ", ".join(f"{k}={v:.4g}" for k, v in chosen.params.items())
+        fig.text(
+            0.5, 0.95,
+            f"{label} ({params}): {len(chosen.true)} nodes, MAE {chosen.mae:.3f} °C, "
+            f"max {chosen.max_abs:.3f} °C" + (" (cut at y=0.5)" if half else ""),
+            ha="center", fontsize=11,
+        )
 
     # --- all simulations ------------------------------------------------------
     m = ev.metrics()
     all_true, all_pred = ev.true, ev.pred
-    ax = fig.add_subplot(2, 3, 4)
+    ax = fig.add_subplot(rows, 3, first)
     ax.scatter(all_true, all_pred, s=2, alpha=0.3)
     lim = [min(all_true.min(), all_pred.min()), max(all_true.max(), all_pred.max())]
     ax.plot(lim, lim, "k--", lw=1)
@@ -364,11 +425,12 @@ def draw_evaluation(plt, ev: Evaluation, chosen: SimulationResult, half: bool = 
            title=f"{len(ev.results)} simulations, MAE {m['sim_MAE']:.3f} °C "
                  f"[{m['sim_MAE_lo']:.3f}, {m['sim_MAE_hi']:.3f}]")
 
-    ax = fig.add_subplot(2, 3, 5)
-    ax.hist(all_pred - all_true, bins=60)
+    ax = fig.add_subplot(rows, 3, first + 1)
+    errors = all_pred - all_true
+    ax.hist(errors, bins=60 if np.ptp(errors) > 1e-9 * max(1.0, np.abs(errors).max()) else 1)
     ax.set(xlabel="predicted - true (°C)", ylabel="nodes", title=f"Error distribution (RMSE {m['RMSE']:.3f} °C)")
 
-    ax = fig.add_subplot(2, 3, 6)
+    ax = fig.add_subplot(rows, 3, first + 2)
     maes = np.array([r.mae for r in ev.results])
     colors = ["C3" if r is chosen else "C0" for r in ev.results]
     ax.bar(np.arange(len(maes)), maes, color=colors, width=1.0)
@@ -376,7 +438,7 @@ def draw_evaluation(plt, ev: Evaluation, chosen: SimulationResult, half: bool = 
            title=f"Error per simulation (red: {label})")
 
     fig.suptitle(f"{ev.checkpoint.parent.name} ({ev.model_name}) on {ev.dataset.stem} [{ev.subset}]", y=0.995)
-    fig.subplots_adjust(top=0.9, hspace=0.35)
+    fig.subplots_adjust(top=0.9 if three_d else 0.85, hspace=0.35)
     return fig
 
 

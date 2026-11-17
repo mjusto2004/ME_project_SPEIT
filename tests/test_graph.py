@@ -153,7 +153,10 @@ def test_plot_run_writes_figures(tmp_path):
     assert latest_run(tmp_path / "runs") == tmp_path / "runs" / "r1"
 
     saved = plot_run(tmp_path / "runs" / "r1", sample=0, half=True, save=tmp_path / "fig")
-    assert [p.name for p in saved] == ["fig_curves.png", "fig_mesh.png"]
+    from me_project_speit.viewer import available
+
+    expected = ["fig_curves.png", "fig_mesh.png"] + (["fig_mesh_3d.png"] if available() else [])
+    assert [p.name for p in saved] == expected
     assert all(p.stat().st_size > 1000 for p in saved)
     with pytest.raises(ValueError, match="--sample"):
         plot_run(tmp_path / "runs" / "r1", sample=99, save=tmp_path / "fig2")

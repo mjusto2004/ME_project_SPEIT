@@ -16,6 +16,7 @@ def plot_run(
     sample: int = 0,
     half: bool = False,
     save: str | Path | None = None,
+    viewer: str = "auto",
 ) -> list[Path]:
     """Plot a training run.
 
@@ -30,7 +31,11 @@ def plot_run(
     sample : which test simulation to draw (0 = first).
     half : draw only the nodes with y <= 0.5, to see inside the cube.
     save : if given, figures are saved as ``<save>_curves.png`` and
-        ``<save>_mesh.png`` instead of being shown.
+        ``<save>_mesh.png`` (plus ``<save>_mesh_3d.png`` with PyVista) instead
+        of being shown.
+    viewer : ``auto``, ``pyvista`` or ``matplotlib`` for the 3D view of the test
+        simulations (see :func:`~.evaluation.plot_evaluation`). With PyVista the
+        arrow keys go through the test simulations.
 
     Returns
     -------
@@ -46,16 +51,20 @@ def plot_run(
     checkpoint = torch.load(run_dir / "best_model.pt", map_location="cpu", weights_only=True)
     figures = {"curves": _curves(plt, run_dir, checkpoint)}
 
-    figures["mesh"] = _mesh_prediction(plt, run_dir, checkpoint, sample, half)
+    figures["mesh"], window = _mesh_prediction(plt, run_dir, checkpoint, sample, half, viewer, save is not None)
 
     saved = []
     if save is None:
-        plt.show()
+        from .evaluation import show_figures
+
+        show_figures(plt, window)
     else:
         for name, fig in figures.items():
             path = Path(f"{save}_{name}.png")
             fig.savefig(path, dpi=130, bbox_inches="tight")
             saved.append(path)
+        if window is not None:
+            saved.append(window.screenshot(f"{save}_mesh_3d.png"))
     return saved
 
 
@@ -87,10 +96,14 @@ def _curves(plt, run_dir: Path, checkpoint: dict):
     return fig
 
 
-def _mesh_prediction(plt, run_dir: Path, checkpoint: dict, sample: int, half: bool):
+def _mesh_prediction(plt, run_dir: Path, checkpoint: dict, sample: int, half: bool,
+                     viewer: str = "matplotlib", off_screen: bool = False):
     """True / predicted / error on the nodes of one test simulation, parity plot,
-    error histogram and error per test simulation (see :mod:`.evaluation`)."""
-    from .evaluation import draw_evaluation, evaluate
+    error histogram and error per test simulation (see :mod:`.evaluation`).
+
+    Returns the matplotlib figure and the PyVista window (``None`` with matplotlib).
+    """
+    from .evaluation import draw_evaluation, evaluate, use_pyvista
 
     dataset_path = Path(checkpoint["dataset"])
     if not dataset_path.exists():
@@ -100,4 +113,15 @@ def _mesh_prediction(plt, run_dir: Path, checkpoint: dict, sample: int, half: bo
     ev = evaluate(run_dir / "best_model.pt", dataset_path, subset="test")
     if not 0 <= sample < len(ev.results):
         raise ValueError(f"--sample must be between 0 and {len(ev.results) - 1} (test simulations).")
-    return draw_evaluation(plt, ev, ev.results[sample], half, label=f"test simulation {sample}")
+    window = None
+    if use_pyvista(viewer, ev.results):
+        from .viewer import PredictionViewer
+
+        window = PredictionViewer(
+            ev.results, index=sample, half=half, off_screen=off_screen,
+            label=lambda i, r: f"test simulation {i} (dataset simulation {r.sim})",
+            title=f"{run_dir.name}: test simulations",
+        )
+    fig = draw_evaluation(plt, ev, ev.results[sample], half, label=f"test simulation {sample}",
+                          three_d=window is None or off_screen)
+    return fig, window

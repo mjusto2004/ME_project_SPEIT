@@ -59,6 +59,7 @@ Extras:
 - *(none)* – `numpy` and `torch`: enough to **train** on an existing dataset.
 - `sim` – adds `EasyFEA` (and gmsh): needed to **generate** data and **plot** fields.
 - `plot` – adds `matplotlib`: needed by `me-project-speit plot`.
+- `pyvista` (a dependency) gives the interactive 3D viewer of `infer` and `plot`. `uv.lock` was not updated when it was added: run `uv lock` once it parses again, or install it with `uv pip install pyvista`.
 - `dev` – adds `pytest`.
 
 ## Usage
@@ -140,12 +141,15 @@ Loads `best_model.pt` (model in `eval` mode), predicts every simulation of the d
 | `--subset` | `auto` | `test` (test split of the run, training dataset only), `all`; `auto` = `test` on the training dataset, `all` otherwise |
 | `--sim` | worst simulation | simulation (number in the dataset) drawn in 3D |
 | `--half` | | draw only the nodes with y <= 0.5 |
-| `--mesh` | | also open interactive PyVista views (true, predicted, error) on the cube mesh (`field`, `pointwise`) |
+| `--viewer` | `auto` | 3D view: `pyvista` (see below) or `matplotlib`; `auto` takes PyVista when it is installed |
+| `--mesh` | | also open EasyFEA's PyVista views (true, predicted, error) on the cube mesh (`field`, `pointwise`) |
 | `--csv` | | write MAE / NMAE / RMSE / max error of every simulation to a CSV |
-| `--save` | | write `<SAVE>_inference.png` instead of opening a window |
+| `--save` | | write `<SAVE>_inference.png` (and `<SAVE>_inference_3d.png` with PyVista) instead of opening windows |
 | `--no-plot`, `--top` | | only print the errors; number of worst/best simulations listed (5) |
 
-The figure shows, for the chosen simulation, the true temperature, the prediction and the absolute error at every node in 3D, then, over all evaluated simulations, predicted vs true, the error histogram and the MAE of each simulation. Every dataset kind has 3D coordinates: `pointwise` and `graph` store them as inputs, `field` datasets on the cube mesh rebuild it with EasyFEA.
+The figures show, for the chosen simulation, the true temperature, the prediction and the absolute error at every node in 3D, then, over all evaluated simulations, predicted vs true, the error histogram and the MAE of each simulation.
+
+**3D viewer (PyVista).** The 3D part opens in a PyVista window (GPU rendering, smooth even with 16 000-node meshes): three views (true, predicted, error) whose cameras move together. Drag the plane in the left view to cut the part and see inside (`--half` starts with a cut at y = 0.5), `c` turns the cut on/off, **Right / Left** go to the next / previous simulation (from the worst to the best by MAE), `r` resets the view. The other figures open when the 3D window is closed. `--viewer matplotlib` keeps everything in one matplotlib figure (slow to rotate on fine meshes). Every dataset kind has 3D coordinates: `pointwise` and `graph` store them as inputs, `field` datasets on the cube mesh rebuild it with EasyFEA.
 
 Python API:
 
@@ -174,9 +178,10 @@ uv sync --extra plot                              # installs matplotlib (once)
 uv run me-project-speit plot                      # the latest run in runs/
 uv run me-project-speit plot --run runs/<folder> --sample 3 --half
 uv run me-project-speit plot --save figures/run1  # write PNG files instead of opening windows
+uv run me-project-speit plot --viewer matplotlib  # 3D view in matplotlib instead of PyVista
 ```
 
-Two figures: the **training curves** (loss and validation MAE per epoch, with the best epoch marked), and the **true temperature, the prediction and the absolute error** on the nodes of one test simulation (`--sample` picks which; `--half` keeps only y <= 0.5 to see inside the cube), with a predicted-vs-true plot, the error histogram and the error of each test simulation (same figure as `infer` on the test split). The 3D views open in a window you can rotate.
+Two figures: the **training curves** (loss and validation MAE per epoch, with the best epoch marked), and the **true temperature, the prediction and the absolute error** on the nodes of one test simulation (`--sample` picks which; `--half` keeps only y <= 0.5 to see inside the cube), with a predicted-vs-true plot, the error histogram and the error of each test simulation (same figures as `infer` on the test split). The 3D view opens in the PyVista viewer when it is installed; there the arrow keys go through the test simulations. The 3D views open in a window you can rotate.
 
 ### 6. List models and datasets
 

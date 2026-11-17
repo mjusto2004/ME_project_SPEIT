@@ -100,6 +100,9 @@ def build_parser(model: str | None = None) -> argparse.ArgumentParser:
     plot.add_argument("--sample", type=int, default=0, help="which test simulation to draw")
     plot.add_argument("--half", action="store_true", help="draw only the nodes with y <= 0.5 (see inside)")
     plot.add_argument("--save", default=None, help="save PNG files <SAVE>_curves.png / _mesh.png instead of opening windows")
+    plot.add_argument("--viewer", choices=["auto", "pyvista", "matplotlib"], default="auto",
+                      help="3D view: pyvista (smooth, linked views, cutting plane, arrow keys through the "
+                      "test simulations) or matplotlib. auto: pyvista when installed (default)")
 
     inf = sub.add_parser("infer", help="run a trained model on a dataset: errors and 3D plots")
     inf.add_argument("--run", type=Path, default=None,
@@ -113,6 +116,9 @@ def build_parser(model: str | None = None) -> argparse.ArgumentParser:
     inf.add_argument("--sim", type=int, default=None,
                      help="simulation (number in the dataset) drawn in 3D (default: the worst one)")
     inf.add_argument("--half", action="store_true", help="draw only the nodes with y <= 0.5 (see inside)")
+    inf.add_argument("--viewer", choices=["auto", "pyvista", "matplotlib"], default="auto",
+                     help="3D view: pyvista (smooth, linked views, cutting plane, arrow keys from the worst "
+                     "to the best simulation) or matplotlib. auto: pyvista when installed (default)")
     inf.add_argument("--mesh", action="store_true",
                      help="also open interactive PyVista views of --sim on the cube mesh (field, pointwise)")
     inf.add_argument("--top", type=int, default=5, help="number of worst / best simulations listed")
@@ -257,7 +263,7 @@ def main(argv: list[str] | None = None) -> None:
                 print(f"Saved: {ev.to_csv(args.csv)}")
             chosen = ev.worst() if args.sim is None else ev.get(args.sim)
             if not args.no_plot:
-                for path in plot_evaluation(ev, sim=chosen.sim, half=args.half, save=args.save):
+                for path in plot_evaluation(ev, sim=chosen.sim, half=args.half, save=args.save, viewer=args.viewer):
                     print(f"Saved: {path}")
             if args.mesh:
                 show_on_mesh(chosen)
@@ -280,7 +286,7 @@ def main(argv: list[str] | None = None) -> None:
         try:
             run = args.run or latest_run()
             print(f"Run: {run}")
-            for path in plot_run(run, sample=args.sample, half=args.half, save=args.save):
+            for path in plot_run(run, sample=args.sample, half=args.half, save=args.save, viewer=args.viewer):
                 print(f"Saved: {path}")
         except (FileNotFoundError, ValueError) as exc:
             parser.exit(2, f"error: {exc}\n")
