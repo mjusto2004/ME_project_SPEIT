@@ -21,6 +21,17 @@ def test_gnn_options():
     assert parse("--model", "gnn", "--hidden", "16", "--layers", "2") == {"hidden": 16, "layers": 2}
 
 
+def test_gnn_architecture_options():
+    assert parse("--model", "gnn", "--layers", "15", "--hidden", "128", "--norm", "layer",
+                 "--edge-features", "--edge-update", "--aggregation", "sum", "--mlp-layers", "3",
+                 "--activation", "gelu", "--no-shared-weights", "--dropout", "0.1",
+                 "--checkpointing", "--decoder-layers", "2") == {
+        "layers": 15, "hidden": 128, "norm": "layer", "edge_features": True, "edge_update": True,
+        "aggregation": "sum", "mlp_layers": 3, "activation": "gelu", "shared_weights": False,
+        "dropout": 0.1, "checkpointing": True, "decoder_layers": 2,
+    }
+
+
 def test_mlp_hidden_is_a_list():
     assert parse("--model", "mlp", "--hidden", "16", "16") == {"hidden": [16, 16]}
 

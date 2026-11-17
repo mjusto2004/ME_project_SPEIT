@@ -22,6 +22,74 @@ class IncompatibleError(ValueError):
     """Raised when a model cannot be used with a given dataset."""
 
 
+SCHEDULERS = ("none", "cosine", "plateau")
+
+
+class LRSchedule:
+    """Learning rate of :meth:`SurrogateModel._fit_loop` (see there for the kinds).
+
+    Kept outside ``torch.optim.lr_scheduler`` so that every kind is a few
+    readable lines: :meth:`apply` sets the rate before each batch,
+    :meth:`end_of_epoch` reacts to the validation result.
+    """
+
+    def __init__(self, kind, lr, epochs, steps_per_epoch, warmup=0, min_lr=0.0,
+                 plateau_patience=10, plateau_factor=0.5):
+        if kind not in SCHEDULERS:
+            raise ValueError(f"Unknown scheduler '{kind}'. Available: {list(SCHEDULERS)}")
+        if not 0 <= min_lr <= lr:
+            raise ValueError("min_lr must be between 0 and lr.")
+        if warmup < 0 or (warmup > 0 and warmup >= epochs):
+            raise ValueError("warmup must be >= 0 and smaller than the number of epochs.")
+        if not 0 < plateau_factor < 1 or plateau_patience < 1:
+            raise ValueError("plateau_factor must be in (0, 1) and plateau_patience >= 1.")
+        self.kind, self.base, self.min_lr = kind, lr, min_lr
+        self.steps_per_epoch = max(steps_per_epoch, 1)
+        self.total = epochs * self.steps_per_epoch
+        self.warmup = warmup * self.steps_per_epoch
+        self.plateau_patience, self.plateau_factor = plateau_patience, plateau_factor
+        self.step, self.stale = 0, 0
+        self.lr = self._cosine(0) if kind == "cosine" else lr
+
+    def _cosine(self, step: int) -> float:
+        if step < self.warmup:
+            return self.base * (step + 1) / self.warmup
+        progress = (step - self.warmup) / max(self.total - self.warmup - 1, 1)  # last batch: min_lr
+        return self.min_lr + (self.base - self.min_lr) * 0.5 * (1 + math.cos(math.pi * min(progress, 1.0)))
+
+    def next_lr(self) -> float:
+        """Rate the next batch will use."""
+        return self._cosine(self.step) if self.kind == "cosine" else self.lr
+
+    def apply(self, optimizer) -> None:
+        """Set the rate of the next batch."""
+        if self.kind == "cosine":
+            self.lr = self._cosine(self.step)
+        self.step += 1
+        for group in optimizer.param_groups:
+            group["lr"] = self.lr
+
+    def end_of_epoch(self, improved: bool) -> bool:
+        """Update the plateau schedule. ``True`` means stop: the rate is at its minimum and still no progress."""
+        if self.kind != "plateau":
+            return False
+        self.stale = 0 if improved else self.stale + 1
+        if self.stale < self.plateau_patience:
+            return False
+        if self.lr <= self.min_lr:
+            return True
+        self.lr, self.stale = max(self.lr * self.plateau_factor, self.min_lr), 0
+        return False
+
+    def describe(self) -> str:
+        if self.kind == "cosine":
+            return f"cosine to {self.min_lr:g}, warmup {self.warmup // self.steps_per_epoch} epochs"
+        if self.kind == "plateau":
+            return (f"plateau: x{self.plateau_factor:g} after {self.plateau_patience} epochs "
+                    f"without progress, min {self.min_lr:g}")
+        return "constant"
+
+
 class SurrogateModel(nn.Module, ABC):
     """Maps ``n_inputs`` parameters to ``n_outputs`` values.
 
@@ -63,13 +131,13 @@ class SurrogateModel(nn.Module, ABC):
         patience: int,
         device: torch.device,
         y_std: torch.Tensor,
-        on_epoch: Callable[[int, float, float, float, float], None] | None = None,
+        on_epoch: Callable[..., None] | None = None,
         on_best: Callable[[int], None] | None = None,
         **fit_kwargs,
     ) -> int:
         """Train the model; returns the best epoch (lowest validation MSE).
 
-        ``on_epoch(epoch, train_mse, val_mse, val_mae, val_rmse)`` is called
+        ``on_epoch(epoch, train_mse, val_mse, val_mae, val_rmse[, lr])`` is called
         after every epoch and ``on_best(epoch)`` each time the validation MSE
         improves (the caller uses it to save a checkpoint). ``y_std`` converts
         normalized errors back to real units. ``fit_kwargs`` are the model's own
@@ -104,19 +172,37 @@ class SurrogateModel(nn.Module, ABC):
     def _fit_loop(
         self, train_loader, val_loader, *, epochs, lr, patience, device, y_std,
         on_epoch=None, on_best=None, weight_decay: float = 0.0,
+        scheduler: str = "none", warmup: int = 0, min_lr: float = 0.0,
+        plateau_patience: int = 10, plateau_factor: float = 0.5,
     ) -> int:
-        """Standard training: Adam (with optional ``weight_decay``) + MSE on batches shaped ``(*inputs, target)``, early stopping."""
-        optimizer = torch.optim.Adam(self.parameters(), lr=lr, weight_decay=weight_decay)
+        """Standard training: Adam (with optional ``weight_decay``) + MSE on batches shaped
+        ``(*inputs, target)``, early stopping, optional learning-rate schedule.
+
+        ``scheduler``:
+
+        - ``"none"``: constant ``lr``;
+        - ``"cosine"``: linear warmup over ``warmup`` epochs, then cosine decay from
+          ``lr`` to ``min_lr`` at the last epoch (updated at every batch). It reaches
+          ``min_lr`` only if early stopping does not stop the run first;
+        - ``"plateau"``: the rate is multiplied by ``plateau_factor`` after
+          ``plateau_patience`` epochs without a better validation MSE, never below
+          ``min_lr``; training stops when it is at ``min_lr`` and still not improving.
+        """
+        schedule = LRSchedule(scheduler, lr, epochs, len(train_loader), warmup, min_lr,
+                              plateau_patience, plateau_factor)
+        optimizer = torch.optim.Adam(self.parameters(), lr=schedule.lr, weight_decay=weight_decay)
         criterion = nn.MSELoss()
         best_val, best_epoch, stale = float("inf"), 0, 0
 
         for epoch in range(1, epochs + 1):
             self.train()
             total, count = 0.0, 0
+            epoch_lr = schedule.next_lr()  # rate of the first batch (cosine changes it at every batch)
             # leave=False: the bar is erased from the terminal when the epoch is over.
             bar = tqdm(train_loader, desc=f"Epoch {epoch:3d}", leave=False, unit="batch")
             for batch in bar:
                 *inputs, target = (t.to(device, non_blocking=True) for t in batch)
+                schedule.apply(optimizer)
                 optimizer.zero_grad()
                 loss = criterion(self(*inputs), target)
                 loss.backward()
@@ -130,7 +216,7 @@ class SurrogateModel(nn.Module, ABC):
             if not math.isfinite(val_mse):
                 raise RuntimeError("Non-finite validation loss.")
             if on_epoch:
-                on_epoch(epoch, train_mse, val_mse, val_mae, val_rmse)
+                on_epoch(epoch, train_mse, val_mse, val_mae, val_rmse, epoch_lr)
 
             if val_mse < best_val:
                 best_val, best_epoch, stale = val_mse, epoch, 0
@@ -143,10 +229,13 @@ class SurrogateModel(nn.Module, ABC):
             star = " *" if stale == 0 else ""  # * = new best validation MSE
             tqdm.write(
                 f"Epoch {epoch:3d} | Train MSE: {train_mse:.5f} | "
-                f"Val MSE: {val_mse:.5f} | Val MAE: {val_mae:.3f}{star}"
+                f"Val MSE: {val_mse:.5f} | Val MAE: {val_mae:.3f} | LR: {epoch_lr:.2e}{star}"
             )
             if stale >= patience:
                 tqdm.write(f"Early stopping at epoch {epoch}")
+                break
+            if schedule.end_of_epoch(improved=stale == 0):
+                tqdm.write(f"Learning rate at its minimum ({min_lr:g}) and no progress: stopping at epoch {epoch}")
                 break
         return best_epoch
 
@@ -191,6 +280,16 @@ class SurrogateModel(nn.Module, ABC):
         cls.add_fit_arguments(probe)
         names = [a.dest for a in probe._actions if a.dest != "help"]
         return {n: getattr(args, n) for n in names if getattr(args, n, None) is not None}
+
+    @classmethod
+    def from_spec(cls, spec: "DatasetSpec", **kwargs) -> "SurrogateModel":
+        """Build the model for a dataset. Default: ``cls(spec.n_inputs, spec.n_outputs, **kwargs)``.
+
+        Override when the model needs more of the spec (e.g. the input names).
+        ``kwargs`` are the options stored in checkpoints; what is taken from the
+        spec is not stored, since the checkpoint keeps the spec.
+        """
+        return cls(spec.n_inputs, spec.n_outputs, **kwargs)
 
     @classmethod
     def check_compatible(cls, spec: "DatasetSpec") -> None:

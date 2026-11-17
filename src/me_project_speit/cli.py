@@ -1,4 +1,4 @@
-"""Command-line interface: ``me-project-speit {generate,train,show,plot,list}``."""
+"""Command-line interface: ``me-project-speit {generate,train,infer,show,plot,list}``."""
 
 from __future__ import annotations
 
@@ -42,6 +42,15 @@ def build_parser(model: str | None = None) -> argparse.ArgumentParser:
     )
 
     gen.add_argument(
+        "--res",
+        type=int,
+        nargs="+",
+        metavar=("MIN", "MAX"),
+        default=None,
+        help="mesh resolution (divisions of the cube edge) of a graph dataset: one value, or a "
+        "range MIN MAX drawn per simulation. Default: the range in simulations/config.py",
+    )
+    gen.add_argument(
         "--kind",
         "--layout",
         dest="kind",
@@ -61,6 +70,17 @@ def build_parser(model: str | None = None) -> argparse.ArgumentParser:
                     help="rows per batch (simulations per batch for graph datasets); default depends on the dataset kind")
     tr.add_argument("--lr", type=float, default=1e-3)
     tr.add_argument("--patience", type=int, default=30)
+    tr.add_argument("--scheduler", choices=["none", "cosine", "plateau"], default="none",
+                    help="learning-rate schedule. cosine: decay from --lr to --min-lr over --epochs "
+                    "(after --warmup epochs); plateau: multiply by --plateau-factor after "
+                    "--plateau-patience epochs without progress (default: %(default)s)")
+    tr.add_argument("--warmup", type=int, default=0, help="cosine: epochs of linear warmup (default: %(default)s)")
+    tr.add_argument("--min-lr", type=float, default=0.0,
+                    help="cosine: final rate; plateau: lowest rate (default: %(default)s)")
+    tr.add_argument("--plateau-patience", type=int, default=10,
+                    help="plateau: epochs without progress before reducing the rate (default: %(default)s)")
+    tr.add_argument("--plateau-factor", type=float, default=0.5,
+                    help="plateau: factor applied to the rate (default: %(default)s)")
     tr.add_argument("--seed", type=int, default=42)
     tr.add_argument("--device", choices=["auto", "cuda", "cpu"], default="auto")
     tr.add_argument("--output-dir", type=Path, default=None)
@@ -80,6 +100,25 @@ def build_parser(model: str | None = None) -> argparse.ArgumentParser:
     plot.add_argument("--sample", type=int, default=0, help="which test simulation to draw")
     plot.add_argument("--half", action="store_true", help="draw only the nodes with y <= 0.5 (see inside)")
     plot.add_argument("--save", default=None, help="save PNG files <SAVE>_curves.png / _mesh.png instead of opening windows")
+
+    inf = sub.add_parser("infer", help="run a trained model on a dataset: errors and 3D plots")
+    inf.add_argument("--run", type=Path, default=None,
+                     help="run folder or best_model.pt (default: the latest in runs/)")
+    inf.add_argument("--dataset", default=None,
+                     help="CSV path or name in --data-dir (default: the training dataset of the run)")
+    inf.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
+    inf.add_argument("--subset", choices=["auto", "all", "test"], default="auto",
+                     help="simulations to infer on. auto: the test split on the training dataset, "
+                     "every simulation on another one (default: %(default)s)")
+    inf.add_argument("--sim", type=int, default=None,
+                     help="simulation (number in the dataset) drawn in 3D (default: the worst one)")
+    inf.add_argument("--half", action="store_true", help="draw only the nodes with y <= 0.5 (see inside)")
+    inf.add_argument("--mesh", action="store_true",
+                     help="also open interactive PyVista views of --sim on the cube mesh (field, pointwise)")
+    inf.add_argument("--top", type=int, default=5, help="number of worst / best simulations listed")
+    inf.add_argument("--csv", type=Path, default=None, help="write the errors of every simulation to this CSV")
+    inf.add_argument("--save", default=None, help="save the figure to <SAVE>_inference.png instead of opening it")
+    inf.add_argument("--no-plot", action="store_true", help="only print the errors")
 
     ls = sub.add_parser("list", help="list available models or datasets")
     ls.add_argument("what", choices=["models", "datasets"])
@@ -161,9 +200,14 @@ def main(argv: list[str] | None = None) -> None:
         from .datasets import save_dataset
 
         try:
+            ranges = None
+            if args.res is not None:
+                if len(args.res) > 2:
+                    raise ValueError("--res takes one value or two (MIN MAX).")
+                ranges = {"res": (args.res[0], args.res[-1])}
             save_dataset(
                 args.n_samples, folder=args.output_dir, seed=args.seed, input_names=args.params, kind=args.kind,
-                workers=args.workers
+                workers=args.workers, ranges=ranges,
             )
         except ValueError as exc:
             parser.error(str(exc))
@@ -184,6 +228,11 @@ def main(argv: list[str] | None = None) -> None:
                 batch_size=args.batch_size,
                 lr=args.lr,
                 patience=args.patience,
+                scheduler=args.scheduler,
+                warmup=args.warmup,
+                min_lr=args.min_lr,
+                plateau_patience=args.plateau_patience,
+                plateau_factor=args.plateau_factor,
                 seed=args.seed,
                 device=args.device,
                 output_dir=args.output_dir,
@@ -191,6 +240,28 @@ def main(argv: list[str] | None = None) -> None:
             )
             train(cfg)
         except (ValueError, FileNotFoundError, IncompatibleError) as exc:
+            parser.exit(2, f"error: {exc}\n")
+
+    elif args.command == "infer":
+        from .datasets import resolve_dataset
+        from .evaluation import evaluate, plot_evaluation, show_on_mesh
+        from .models import IncompatibleError
+        from .utils import latest_run
+
+        try:
+            run = args.run or latest_run()
+            dataset = None if args.dataset is None else resolve_dataset(args.dataset, args.data_dir)
+            ev = evaluate(run, dataset, subset=args.subset)
+            print(ev.summary(top=args.top))
+            if args.csv is not None:
+                print(f"Saved: {ev.to_csv(args.csv)}")
+            chosen = ev.worst() if args.sim is None else ev.get(args.sim)
+            if not args.no_plot:
+                for path in plot_evaluation(ev, sim=chosen.sim, half=args.half, save=args.save):
+                    print(f"Saved: {path}")
+            if args.mesh:
+                show_on_mesh(chosen)
+        except (FileNotFoundError, ValueError, IncompatibleError) as exc:
             parser.exit(2, f"error: {exc}\n")
 
     elif args.command == "show":

@@ -79,7 +79,7 @@ MESH_ID = "cube_560"
 SPONGE_PARAMS = {
     **PARAMS,
     "r": Param(0.15, (0.05, 0.3)),  # radius of the holes, m
-    "res": Param(8, (10, 25), integer=True),  # mesh divisions of the cube edge (element size = 1/res)
+    "res": Param(25, (25, 25), integer=True),  # mesh divisions of the cube edge (element size = 1/res)
 }
 MAX_HOLES = 20  # the number of holes is drawn in 1..MAX_HOLES
 

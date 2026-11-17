@@ -14,6 +14,7 @@ import torch
 
 from .datasets import DEFAULT_DATA_DIR, load_dataset, load_spec, resolve_dataset
 from .models import build_model, check_compatible
+from .models.base import LRSchedule
 from .utils import select_device, timestamp, to_plain
 
 
@@ -34,6 +35,11 @@ class TrainConfig:
     device: str = "auto"  # "auto", "cuda" or "cpu"
     output_dir: Path | None = None
     test_dataset: Path | None = None  # extra test set (same mesh and inputs), e.g. independent runs
+    scheduler: str = "none"  # learning-rate schedule: "none", "cosine" or "plateau" (see LRSchedule)
+    warmup: int = 0  # cosine: epochs of linear warmup
+    min_lr: float = 0.0  # cosine: final rate; plateau: lowest rate
+    plateau_patience: int = 10  # plateau: epochs without progress before the rate is reduced
+    plateau_factor: float = 0.5  # plateau: the rate is multiplied by this at each reduction
 
     def __post_init__(self):
         self.dataset = Path(self.dataset)
@@ -48,6 +54,18 @@ class TrainConfig:
             or self.patience < 1
         ):
             raise ValueError("epochs, batch_size, patience and lr must be positive")
+        self.lr_schedule(1)  # raises on an invalid schedule before any data is loaded
+
+    def schedule_kwargs(self) -> dict:
+        return {
+            "scheduler": self.scheduler, "warmup": self.warmup, "min_lr": self.min_lr,
+            "plateau_patience": self.plateau_patience, "plateau_factor": self.plateau_factor,
+        }
+
+    def lr_schedule(self, steps_per_epoch: int) -> LRSchedule:
+        return LRSchedule(lr=self.lr, epochs=self.epochs, steps_per_epoch=steps_per_epoch,
+                          kind=self.scheduler, **{k: v for k, v in self.schedule_kwargs().items()
+                                                  if k != "scheduler"})
         if self.device not in ("auto", "cuda", "cpu"):
             raise ValueError("device must be 'auto', 'cuda' or 'cpu'")
 
@@ -163,7 +181,13 @@ def train(cfg: TrainConfig) -> dict:
     print("Training")
     print(f"  Epochs:      {cfg.epochs} (patience {cfg.patience})")
     print(f"  Batch size:  {batch_size}")
-    print(f"  LR:          {cfg.lr}")
+    print(f"  LR:          {cfg.lr} ({cfg.lr_schedule(len(train_loader)).describe()})")
+    if cfg.scheduler == "cosine" and cfg.patience < cfg.epochs:
+        print(f"  Note:        early stopping (patience {cfg.patience}) can end the run before the "
+              "cosine decay; raise --patience to use the whole schedule.")
+    if cfg.scheduler == "plateau" and cfg.patience <= cfg.plateau_patience:
+        print(f"  Note:        --patience ({cfg.patience}) <= --plateau-patience ({cfg.plateau_patience}): "
+              "training stops before the rate is ever reduced.")
     print(f"  Seed:        {cfg.seed}")
     print(f"  Options:     {cfg.fit_kwargs or 'defaults'}")
     print()
@@ -189,23 +213,25 @@ def train(cfg: TrainConfig) -> dict:
                 "val_indices": torch.as_tensor(val_idx.copy()),
                 "test_indices": torch.as_tensor(test_idx.copy()),
                 "epoch": epoch,
+                "schedule": cfg.schedule_kwargs(),
             },
             checkpoint_path,
         )
 
     with history_path.open("w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["epoch", "train_mse_scaled", "val_mse_scaled", "val_mae", "val_rmse"])
+        header = ["epoch", "train_mse_scaled", "val_mse_scaled", "val_mae", "val_rmse", "lr"]
+        writer.writerow(header)
 
         def log_epoch(*row) -> None:
-            writer.writerow(row)
+            writer.writerow(list(row) + [""] * (len(header) - len(row)))  # lr blank for models without one
             f.flush()
 
         best_epoch = model.fit(
             train_loader, val_loader,
             epochs=cfg.epochs, lr=cfg.lr, patience=cfg.patience,
             device=device, y_std=y_std_tensor,
-            on_epoch=log_epoch, on_best=save_checkpoint, **cfg.fit_kwargs,
+            on_epoch=log_epoch, on_best=save_checkpoint, **cfg.schedule_kwargs(), **cfg.fit_kwargs,
         )
 
     # --- Final test evaluation with the best checkpoint ---------------------

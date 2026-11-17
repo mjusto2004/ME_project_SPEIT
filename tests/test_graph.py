@@ -107,11 +107,11 @@ def test_gnn_shapes_and_edge_dependence():
 
 def test_kinds_and_models_are_matched():
     graph = make_spec()
-    assert compatible_models(graph) == ["gnn"]
+    assert compatible_models(graph) == ["gnn", "gno"]
     assert "gnn" not in compatible_models(DatasetSpec("f", ["a"], 50))
     with pytest.raises(IncompatibleError, match="GraphDataset"):
         build_model("gnn", DatasetSpec("f", ["a"], 50))
-    with pytest.raises(IncompatibleError, match=r"Compatible models: \['gnn'\]"):
+    with pytest.raises(IncompatibleError, match=r"Compatible models: \['gnn', 'gno'\]"):
         build_model("mlp", graph)
     with pytest.raises(IncompatibleError):
         build_model("coord_mlp", graph)
@@ -157,3 +157,82 @@ def test_plot_run_writes_figures(tmp_path):
     assert all(p.stat().st_size > 1000 for p in saved)
     with pytest.raises(ValueError, match="--sample"):
         plot_run(tmp_path / "runs" / "r1", sample=99, save=tmp_path / "fig2")
+
+
+# ---- options of the GNN -----------------------------------------------------
+def test_default_gnn_keeps_the_original_layout():
+    """Checkpoints of the original GNN (before the options) must still load."""
+    model = build_model("gnn", make_spec(), hidden=8, layers=2)
+    expected = {"encoder.0.weight", "encoder.0.bias", "encoder.2.weight", "encoder.2.bias",
+                "head.weight", "head.bias"}
+    for block in ("message", "update"):
+        for i in range(2):
+            expected |= {f"{block}.{i}.{j}.{p}" for j in (0, 2) for p in ("weight", "bias")}
+    assert set(model.state_dict()) == expected
+    assert model.state_dict()["message.0.0.weight"].shape == (8, 16)
+
+
+@pytest.mark.parametrize("options", [
+    {},
+    {"layers": 6, "norm": "layer", "edge_features": True, "edge_update": True},  # MeshGraphNets-like
+    {"aggregation": "sum", "activation": "gelu", "mlp_layers": 3, "decoder_layers": 3},
+    {"aggregation": "max", "edge_update": True, "shared_weights": True, "dropout": 0.1},
+    {"edge_features": True, "mlp_layers": 1, "activation": "silu"},
+])
+def test_gnn_options_forward_and_backward(options):
+    model = build_model("gnn", make_spec(), hidden=8, **options)
+    x = torch.randn(10, 5)
+    edges = torch.tensor([[0, 1, 2, 3, 1, 2, 3, 4], [1, 2, 3, 4, 0, 1, 2, 3]])
+    out = model(x, edges)
+    assert out.shape == (10, 1) and torch.isfinite(out).all()
+    out.sum().backward()
+    assert all(p.grad is not None for p in model.parameters())
+
+
+def test_shared_weights_has_one_block():
+    shared = build_model("gnn", make_spec(), hidden=8, layers=10, shared_weights=True)
+    assert len(shared.message) == len(shared.update) == 1
+
+
+def test_edge_features_see_the_geometry():
+    model = build_model("gnn", make_spec(), hidden=8, layers=2, edge_features=True)
+    x = torch.randn(5, 5)
+    edges = torch.tensor([[0, 1, 2, 3], [1, 2, 3, 4]])
+    moved = x.clone()
+    moved[2, 1:4] += 1.0  # move node 2 (columns x, y, z)
+    assert not torch.allclose(model(x, edges)[0], model(moved, edges)[0])
+
+
+def test_checkpointing_gives_the_same_results():
+    torch.manual_seed(0)
+    plain = build_model("gnn", make_spec(), hidden=8, layers=3, edge_update=True)
+    ckpt = build_model("gnn", make_spec(), hidden=8, layers=3, edge_update=True, checkpointing=True)
+    ckpt.load_state_dict(plain.state_dict())
+    x = torch.randn(10, 5)
+    edges = torch.tensor([[0, 1, 2, 3], [1, 2, 3, 4]])
+    for m in (plain, ckpt):
+        m.train()
+        m(x, edges).square().sum().backward()
+    for a, b in zip(plain.parameters(), ckpt.parameters()):
+        assert torch.allclose(a.grad, b.grad, atol=1e-6)
+
+
+@pytest.mark.parametrize("bad", [{"norm": "batch"}, {"aggregation": "min"}, {"activation": "x"},
+                                 {"layers": 0}, {"dropout": 1.0}])
+def test_bad_gnn_options_are_rejected(bad):
+    with pytest.raises(ValueError):
+        build_model("gnn", make_spec(), **bad)
+
+
+def test_options_saved_in_checkpoint_rebuild_the_model(tmp_path):
+    path = make_graph_dataset().save(tmp_path / "toy.csv")
+    options = {"hidden": 8, "layers": 3, "norm": "layer", "edge_features": True,
+               "edge_update": True, "aggregation": "sum"}
+    result = train(TrainConfig(dataset=path, model="gnn", model_kwargs=options,
+                               epochs=2, batch_size=4, device="cpu", output_dir=tmp_path / "run"))
+    predictor = Predictor(result["checkpoint"])
+    assert predictor.model.edge_update and predictor.model.aggregation == "sum"
+    ds = load_dataset(path)
+    a, b, c, d = ds.node_start[0], ds.node_stop[0], ds.edge_start[0], ds.edge_stop[0]
+    out = predictor.predict(ds.X[a:b], np.stack([ds.edge_src[c:d], ds.edge_dst[c:d]]))
+    assert out.shape == (b - a, 1)

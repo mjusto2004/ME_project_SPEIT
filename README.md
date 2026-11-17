@@ -31,6 +31,7 @@ Once trained, the network replaces a ~0.5 s simulation with a single forward pas
 │   ├── models/               model registry + compatibility (base.py, registry.py, mlp.py, gnn.py, pod.py)
 │   ├── training.py           training loop, early stopping, evaluation
 │   ├── inference.py          Predictor: load a checkpoint and predict
+│   ├── evaluation.py         infer a model on a dataset: errors per simulation, 3D figures
 │   ├── visualization.py      3D plots of stored fields (needs EasyFEA)
 │   └── cli.py                `me-project-speit` command-line interface
 ├── docs/                     developer tutorials (add a model, dataset, dataset type...)
@@ -70,6 +71,7 @@ The package installs a `me-project-speit` command (also available as `python -m 
 me-project-speit generate -n 90 --output-dir data --seed 0
 me-project-speit generate -n 90 --params T0 h      # vary only T0 and h (Phi0 keeps its default)
 me-project-speit generate -n 90 --kind pointwise   # one row per node, coordinates as inputs
+me-project-speit generate -n 500 --kind graph --res 8 12   # graph meshes with res drawn in 8..12 (--res 25: fixed)
 ```
 
 Runs `n` simulations, **in parallel** (`--workers N`, default: the number of cores up to 8; `--workers 1` runs in the current process). The dataset is the same whatever the number of workers, so a given `--seed` always gives the same file. Typical gain for 40 simulations on 8 workers: 3.8x for `graph`, 2.8x for `pointwise` (start-up of the worker processes costs a few seconds, so the gain grows with `n`). Each simulation uses random inputs (`--params`, default `T0 Phi0 h`; ranges and defaults in `simulations/config.py`) and writes `data/dataset_<timestamp>_<n>.csv` **and** `data/dataset_<timestamp>_<n>.json`. Each CSV row holds the inputs followed by the 560 nodal temperatures in °C.
@@ -89,6 +91,7 @@ me-project-speit train --dataset data_test --model mlp --epochs 300 --device aut
 | `--hidden` | `128 256 256` (`mlp`), `64` (`gnn`) | hidden layer sizes (`mlp`) / node state width (`gnn`) |
 | `--layers` | `4` | message-passing rounds (`gnn` only) |
 | `--n-modes`, `--regressor` | `5`, `gp` | `pod` only: POD modes kept, regression of their coefficients (`gp` or `ridge`) |
+| `--radius`, `--max-neighbours`, `--eval-neighbours`, `--exclude-inputs` | `0.15`, `24`, = max, `res` | `gno` only, see [below](#the-gno-model-train-on-coarse-meshes-predict-on-fine-ones) |
 | `--test-dataset` | | extra independent test set (same inputs and mesh); reports `Independent test MAE` |
 | `--weight-decay` | 0 | L2 penalty of the optimizer (`mlp`, `coord_mlp`, `gnn`) |
 | *model options* | | each model declares its own (`train --model <name> --help` lists them) |
@@ -96,6 +99,10 @@ me-project-speit train --dataset data_test --model mlp --epochs 300 --device aut
 | `--batch-size` | 64 | mini-batch size |
 | `--lr` | 1e-3 | Adam learning rate |
 | `--patience` | 30 | early-stopping patience (epochs) |
+| `--scheduler` | `none` | learning-rate schedule: `none` (constant `--lr`), `cosine`, `plateau` (see below) |
+| `--warmup` | 0 | `cosine`: epochs of linear warmup |
+| `--min-lr` | 0 | `cosine`: final rate; `plateau`: lowest rate |
+| `--plateau-patience`, `--plateau-factor` | 10, 0.5 | `plateau`: epochs without progress before the rate is multiplied by the factor |
 | `--seed` | 42 | seed for the split and initialisation |
 | `--device` | `auto` | `auto`, `cuda` or `cpu` |
 | `--output-dir` | `runs/<dataset>_<timestamp>` | where to write results |
@@ -103,9 +110,56 @@ me-project-speit train --dataset data_test --model mlp --epochs 300 --device aut
 The data is split 70/15/15 (train/validation/test). Inputs and outputs are standardised using training-set statistics only. The best model on validation MSE is kept and finally scored on the test set (MAE and RMSE in °C). The run directory contains:
 
 - `best_model.pt` – weights, model name and arguments, dataset spec, normalisation statistics, split indices, dataset path;
-- `history.csv` – per-epoch train/validation metrics.
+- `history.csv` – per-epoch train/validation metrics and learning rate (`lr`, the rate of the first batch of the epoch).
 
-### 3. Visualise simulations
+**Learning-rate schedules** (`mlp`, `coord_mlp`, `gnn`, `gno`; `pod` has no learning rate):
+
+- `--scheduler cosine`: after `--warmup` epochs rising linearly to `--lr`, the rate follows a cosine down to `--min-lr` at the last epoch, updated at every batch. The decay is spread over `--epochs`, so set a realistic `--epochs` (e.g. 300–500) and a `--patience` large enough not to stop the run in the middle of it (`train` prints a note otherwise).
+- `--scheduler plateau`: the rate is multiplied by `--plateau-factor` after `--plateau-patience` epochs without a better validation MSE, never below `--min-lr`; training stops when the rate is at `--min-lr` and still not improving. Keep `--patience` larger than `--plateau-patience`, e.g. `--scheduler plateau --plateau-patience 10 --patience 40 --min-lr 1e-6`.
+
+`plot` draws the rate next to the training curves.
+
+### 3. Infer a trained model on a dataset
+
+```bash
+uv run me-project-speit infer                                        # latest run, test split of its training data
+uv run me-project-speit infer --run runs/<folder> --dataset independent_100
+uv run me-project-speit infer --run runs/<folder> --dataset independent_100 --sim 12 --half --mesh
+uv run me-project-speit infer --dataset independent_100 --csv errors.csv --save figures/indep --no-plot
+```
+
+Loads `best_model.pt` (model in `eval` mode), predicts every simulation of the dataset and prints the errors in °C, plus the worst and best simulations with their parameters:
+
+- **per simulation** (recommended to compare models): the MAE of each simulation, averaged so that every simulation weighs the same, with a **95 % confidence interval** (bootstrap over the simulations), the median and the 95th percentile, and the **NMAE**: MAE divided by the range (max − min) of the simulation's true field, in %. The simulation is the independent unit: the nodes of one simulation are strongly correlated, so if the intervals of two models overlap, this test set cannot separate them;
+- **over all node values**: MAE, RMSE, max |error| and bias (mean of predicted − true). On `graph` datasets, large meshes weigh more here. It warns when simulations have parameters **outside the training ranges** (the model is extrapolating there). The dataset must have the same kind, inputs and mesh as the training data.
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--run` | latest in `runs/` | run folder or `best_model.pt` |
+| `--dataset` | training dataset | CSV path or name in `--data-dir` |
+| `--subset` | `auto` | `test` (test split of the run, training dataset only), `all`; `auto` = `test` on the training dataset, `all` otherwise |
+| `--sim` | worst simulation | simulation (number in the dataset) drawn in 3D |
+| `--half` | | draw only the nodes with y <= 0.5 |
+| `--mesh` | | also open interactive PyVista views (true, predicted, error) on the cube mesh (`field`, `pointwise`) |
+| `--csv` | | write MAE / NMAE / RMSE / max error of every simulation to a CSV |
+| `--save` | | write `<SAVE>_inference.png` instead of opening a window |
+| `--no-plot`, `--top` | | only print the errors; number of worst/best simulations listed (5) |
+
+The figure shows, for the chosen simulation, the true temperature, the prediction and the absolute error at every node in 3D, then, over all evaluated simulations, predicted vs true, the error histogram and the MAE of each simulation. Every dataset kind has 3D coordinates: `pointwise` and `graph` store them as inputs, `field` datasets on the cube mesh rebuild it with EasyFEA.
+
+Python API:
+
+```python
+from me_project_speit.evaluation import evaluate, plot_evaluation
+
+ev = evaluate("runs/<folder>", "data/independent_100.csv")
+print(ev.summary())
+ev.metrics()                  # {'sim_MAE', 'sim_MAE_lo', 'sim_MAE_hi', 'NMAE', 'MAE', 'RMSE', ...}
+ev.worst().params, ev.get(12).pred
+plot_evaluation(ev, sim=12)
+```
+
+### 4. Visualise simulations
 
 ```bash
 me-project-speit show --dataset data/data_test.csv --ids 0 1
@@ -113,7 +167,7 @@ me-project-speit show --dataset data/data_test.csv --ids 0 1
 
 Opens an interactive 3D plot per simulation, with a shared colour scale.
 
-### 4. Plot a training run
+### 5. Plot a training run
 
 ```bash
 uv sync --extra plot                              # installs matplotlib (once)
@@ -122,9 +176,9 @@ uv run me-project-speit plot --run runs/<folder> --sample 3 --half
 uv run me-project-speit plot --save figures/run1  # write PNG files instead of opening windows
 ```
 
-Two figures: the **training curves** (loss and validation MAE per epoch, with the best epoch marked) for any model, and, for `graph` runs, the **true temperature, the prediction and the absolute error** on the nodes of one test mesh (`--sample` picks which; `--half` keeps only y <= 0.5 to see inside the cube), with a predicted-vs-true plot and the error histogram over all test simulations. The 3D views open in a window you can rotate.
+Two figures: the **training curves** (loss and validation MAE per epoch, with the best epoch marked), and the **true temperature, the prediction and the absolute error** on the nodes of one test simulation (`--sample` picks which; `--half` keeps only y <= 0.5 to see inside the cube), with a predicted-vs-true plot, the error histogram and the error of each test simulation (same figure as `infer` on the test split). The 3D views open in a window you can rotate.
 
-### 5. List models and datasets
+### 6. List models and datasets
 
 ```bash
 me-project-speit list models
@@ -167,7 +221,7 @@ Each dataset type is a subclass of the abstract `Dataset` (`src/me_project_speit
 |---------------|-------|-----|-----------------|--------|
 | `field` (default) | `FieldDataset` | one per simulation | `T0, Phi0, h` → all 560 node temperatures | `mlp`, `pod` |
 | `pointwise` | `PointwiseDataset` | one per (simulation, node) | `T0, Phi0, h, x, y, z` → temperature at that node | `coord_mlp` |
-| `graph` | `GraphDataset` | one per node; every simulation has its own mesh | `T0, Phi0, h, r, res, x, y, z, heated` + the node connections → temperature at that node | `gnn` |
+| `graph` | `GraphDataset` | one per node; every simulation has its own mesh | `T0, Phi0, h, r, res, x, y, z, heated` + the node connections → temperature at that node | `gnn`, `gno` |
 
 A `pointwise` dataset has `n_simulations × 560` rows, with the rows of one simulation contiguous (`rows_per_sample` in the JSON). Train/validation/test are split **per simulation**, never per row, so the nodes of a test simulation never leak into training. Each model lists the dataset classes it accepts (`supported_datasets`); training `mlp` on a pointwise dataset (or `coord_mlp` on a field one) stops immediately with an error listing the models that do fit.
 
@@ -191,6 +245,31 @@ A graph dataset is made of three files with the same stem:
 | `name.json` | the description (`kind: "graph"`, `rows_per_sample: null` because the size varies) |
 
 The `gnn` model (`models/gnn.py`, pure PyTorch) encodes the inputs of each node, then repeats *message passing*: each node averages a message computed from each neighbour and updates itself. On 200 simulations it reaches a test MAE of about 0.13 °C, against 0.5 °C for predicting the mean temperature. `batch-size` counts simulations, not nodes. `show` cannot plot graph datasets yet, and `Predictor.predict(x, edge_index)` needs the connections.
+
+#### The `gno` model: train on coarse meshes, predict on fine ones
+
+`gnn` passes messages along mesh links, so what it learns is counted in links: 8 rounds reach 8/`res` of the cube, and a model trained at `res` 5–10 fails at `res` 25. `gno` (`models/gno.py`, a *graph neural operator*, after Li et al. 2020, "Neural Operator: Graph Kernel Network") works in physical distances instead:
+
+- the neighbours of a node are the nodes within `--radius` (m), whatever the mesh, so `--layers` rounds reach `layers × radius` at any resolution;
+- a message depends on the neighbour's state and on its relative position and distance; averaging the messages estimates an integral over the ball, which does not depend on how finely it is meshed;
+- at most `--max-neighbours` nodes of the ball are drawn at random (a new draw each training step, a fixed one in evaluation so predictions are reproducible; `--eval-neighbours` draws more at inference);
+- a global state (mean over the simulation) goes back to every node at each round;
+- `--exclude-inputs` (default `res`) lists inputs the model ignores: the resolution must not matter. `infer` does not warn about inputs the model ignores.
+
+The mesh edges are only used to tell the simulations of a batch apart. Defaults: `--hidden 128 --layers 6 --radius 0.15 --max-neighbours 24` (reach 0.9 m, about 0.9 M parameters). A training step on 2 coarse meshes takes ~20 ms and 0.6 GB on the RTX 5070; a res-25 mesh (16 000 nodes) is predicted in ~1 s.
+
+Resolution experiment:
+
+```bash
+uv run me-project-speit generate -n 1000 --kind graph --res 8 12 --seed 1            # train: coarse
+uv run me-project-speit generate -n 50 --kind graph --res 10 --seed 2                # test, inside the training range
+uv run me-project-speit generate -n 50 --kind graph --res 18 --seed 3                # test, finer
+uv run me-project-speit generate -n 50 --kind graph --res 25 --seed 4                # test, much finer
+uv run me-project-speit train --dataset <train> --model gno --batch-size 8 --device cuda
+uv run me-project-speit infer --dataset <test_res10> --no-plot    # then res 18 and 25: MAE vs res
+```
+
+Compare with `--model gnn` on the same files. Part of the error at a new resolution is not the model's: the reference temperatures of a coarse finite-element mesh are themselves less accurate than those of a fine one.
 
 > **Extending the project?** Step-by-step guides are in [`docs/`](docs/README.md): [add a dataset](docs/tutorials/01-add-a-dataset.md), [add a simulation parameter](docs/tutorials/02-add-a-simulation-parameter.md), [add a model](docs/tutorials/03-add-a-model.md), [add a dataset type](docs/tutorials/04-add-a-dataset-type.md), [checklist and troubleshooting](docs/tutorials/05-checklist-and-troubleshooting.md).
 

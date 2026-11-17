@@ -289,6 +289,20 @@ class Dataset(ABC):
     def ranges(cls, names) -> dict[str, tuple[float, float]]:
         return {n: cls.params[n].range for n in names}
 
+    @classmethod
+    def with_ranges(cls, spec: DatasetSpec, ranges: dict | None) -> DatasetSpec:
+        """``spec`` with the sampling ranges of some varied parameters replaced."""
+        for name, (lo, hi) in (ranges or {}).items():
+            if name not in spec.input_ranges:
+                raise ValueError(
+                    f"'{name}' is not a varied parameter of this dataset "
+                    f"(varied: {sorted(spec.input_ranges)}); add it to --params."
+                )
+            if lo > hi:
+                raise ValueError(f"Range of '{name}': {lo} > {hi}.")
+            spec.input_ranges[name] = (lo, hi)
+        return spec
+
     # ---- shared behaviour --------------------------------------------------
     @classmethod
     def generate(
@@ -299,14 +313,16 @@ class Dataset(ABC):
         seed: int | None = None,
         verbose: bool = True,
         workers: int = 1,
+        ranges: dict[str, tuple[float, float]] | None = None,
     ) -> "Dataset":
         """Run ``n`` simulations with parameters drawn uniformly in their ranges.
 
         The simulations run in ``workers`` processes. The parameters are all
         drawn first, in this process, so the dataset is the same whatever
-        the number of workers.
+        the number of workers. ``ranges`` replaces the ranges of
+        ``simulations/config.py`` for some of the varied parameters.
         """
-        spec = cls.build_spec(input_names, name=name)
+        spec = cls.with_ranges(cls.build_spec(input_names, name=name), ranges)
         rng = np.random.default_rng(seed)
         all_params = [
             {k: rng.uniform(*spec.input_ranges[k]) for k in spec.input_ranges} for _ in range(n)
@@ -414,16 +430,20 @@ def save_dataset(
     input_names=None,
     kind: str = "field",
     workers: int = 1,
+    ranges: dict[str, tuple[float, float]] | None = None,
 ) -> Path:
     """Generate ``n`` simulations of ``kind``; write a timestamped CSV and its JSON sidecar.
 
-    ``input_names=None`` varies the default parameters of the kind.
+    ``input_names=None`` varies the default parameters of the kind. ``ranges``
+    replaces the sampling ranges of ``simulations/config.py`` for some of them.
     """
     stamp = timestamp()
     stem = f"dataset_{stamp}_{n}"
     dataset_class = get_dataset_class(kind)
     input_names = input_names or dataset_class.default_params
-    dataset = dataset_class.generate(n, input_names, name=stem, seed=seed, workers=workers)
+    dataset = dataset_class.generate(
+        n, input_names, name=stem, seed=seed, workers=workers, ranges=ranges
+    )
     path = dataset.save(Path(folder) / f"{stem}.csv")
     print(f"Dataset saved in: {path} ({dataset.spec.describe()})")
     return path

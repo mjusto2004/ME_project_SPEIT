@@ -64,6 +64,6 @@ def check_compatible(name: str, spec: "DatasetSpec") -> None:
 def build_model(name: str, spec: "DatasetSpec", **kwargs) -> SurrogateModel:
     """Instantiate model ``name`` for a dataset, after checking compatibility."""
     check_compatible(name, spec)
-    model = get_model_class(name)(spec.n_inputs, spec.n_outputs, **kwargs)
+    model = get_model_class(name).from_spec(spec, **kwargs)
     model.init_kwargs = dict(kwargs)  # stored in checkpoints to rebuild the model
     return model

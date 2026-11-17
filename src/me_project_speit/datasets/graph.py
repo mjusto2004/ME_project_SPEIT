@@ -118,7 +118,7 @@ class GraphDataset(Dataset):
     # ---- generation ---------------------------------------------------------
     @classmethod
     def generate(
-        cls, n, input_names=None, name="sponge", seed=None, verbose=True, workers=1
+        cls, n, input_names=None, name="sponge", seed=None, verbose=True, workers=1, ranges=None
     ) -> "GraphDataset":
         """Run ``n`` simulations on random sponges, in ``workers`` processes.
 
@@ -126,7 +126,7 @@ class GraphDataset(Dataset):
         the dataset is the same whatever the number of workers. See
         :meth:`_simulate` for what is drawn.
         """
-        spec = cls.build_spec(input_names or cls.default_params, name=name)
+        spec = cls.with_ranges(cls.build_spec(input_names or cls.default_params, name=name), ranges)
         seeds = np.random.SeedSequence(seed).spawn(n)  # one independent seed per simulation
 
         node_blocks, edge_blocks = [], []

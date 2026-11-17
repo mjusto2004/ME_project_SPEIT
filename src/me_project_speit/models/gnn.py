@@ -11,7 +11,9 @@ from .registry import register_model
 
 
 def _mlp(n_in: int, n_out: int) -> nn.Sequential:
-    return nn.Sequential(nn.Linear(n_in, n_out), nn.ReLU(), nn.Linear(n_out, n_out))
+    return nn.Sequential(nn.Linear(n_in, n_out), nn.ReLU(),
+                         nn.Linear(n_out, n_out), nn.ReLU(),
+                         nn.Linear(n_out, n_out))
 
 
 @register_model("gnn")
