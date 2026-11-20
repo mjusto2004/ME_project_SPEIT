@@ -5,8 +5,9 @@
 #let sponge = json("results/sponge_results.json")
 #let sstats = json("results/sponge_stats.json")
 
-#let accent = rgb("#173f6b")
-#let soft = rgb("#eef2f7")
+// sober, LaTeX-like palette: everything is black
+#let accent = black
+#let soft = none
 
 // helpers -----------------------------------------------------------------
 #let fmt(x, d: 3) = {
@@ -18,12 +19,14 @@
   }
 }
 #let get(model, n) = cube.find(r => r.model == model and r.n == n)
-#let idea(title: "Thinking", body) = block(fill: soft, inset: 9pt, radius: 3pt, width: 100%, stroke: (left: 2.5pt + accent))[
-  #text(weight: "bold", fill: accent)[#title. ] #body
+// framed remarks, in the spirit of a LaTeX `remark` environment inside a thin \fbox
+#let remark(title, body) = block(width: 100%, inset: (x: 8pt, y: 7pt), stroke: 0.4pt + black,
+  above: 1.1em, below: 1.1em)[
+  #set par(first-line-indent: 0pt)
+  #strong[#title.] #body
 ]
-#let limit(body) = block(fill: rgb("#fbf1ee"), inset: 9pt, radius: 3pt, width: 100%, stroke: (left: 2.5pt + rgb("#c03a2b")))[
-  #text(weight: "bold", fill: rgb("#c03a2b"))[Limits. ] #body
-]
+#let idea(title: "Remark", body) = remark(title, body)
+#let limit(body) = remark(emph[Limits], body)
 #let img(path, w: 100%) = image("figures/" + path, width: w)
 
 // sponge results helpers

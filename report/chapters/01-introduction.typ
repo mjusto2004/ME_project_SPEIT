@@ -38,6 +38,6 @@ We worked on two problems, the second much harder than the first:
 
 We present the tool we built (@sec-product), the physics and the datasets (@sec-data), how we
 measure errors (@sec-protocol), then each family of models, always in the same order: _why we tried
-it, how it works, how well it does, where it breaks_. The boxes #box(fill: soft, inset: 2pt)[Thinking]
-explain the reasoning that led from one step to the next; the red boxes list the limits.
+it, how it works, how well it does, where it breaks_. Framed remarks
+explain the reasoning that led from one step to the next; those titled _Limits_ list the limits.
 

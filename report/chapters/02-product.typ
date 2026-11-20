@@ -10,9 +10,9 @@ formula, and results could not be compared. We therefore turned the project into
 #figure(
   {
     set text(8.5pt)
-    let box_(t, s, c: soft) = rect(fill: c, radius: 3pt, inset: 6pt, width: 100%, stroke: 0.5pt + accent)[
+    let box_(t, s) = rect(inset: 6pt, width: 100%, stroke: 0.5pt)[
       #align(center)[#text(weight: "bold")[#t] \ #s]]
-    let arr = align(center + horizon, text(14pt, fill: accent)[#sym.arrow.r])
+    let arr = align(center + horizon, text(14pt)[#sym.arrow.r])
     grid(columns: (1fr, 0.25fr, 1fr, 0.25fr, 1fr, 0.25fr, 1fr), align: horizon,
       box_("generate", [EasyFEA simulations, \ in parallel, seeded]), arr,
       box_("dataset", [CSV + JSON spec \ (inputs, mesh, kind)]), arr,
